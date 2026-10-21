@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Nộp bài · Olympic AI UNETI 2026{% endblock %}
+{% block noi_dung %}
+{% if ket_qua %}
+  {% if ket_qua.van_de %}
+    <div class="tb tb-vang">
+      <strong>Đã nhận bài của đội {{ ket_qua.ma_doi }} lúc {{ ket_qua.thoi_gian }}, nhưng có vấn đề cần kiểm tra:</strong>
+      <ul>{% for v in ket_qua.van_de %}<li>{{ v }}</li>{% endfor %}</ul>
+      Đội nên sửa và <strong>nộp lại</strong> trước hạn (lần nộp sau thay thế lần này).
+    </div>
+  {% else %}
+    <div class="tb tb-ok"><strong>Nộp thành công.</strong> Đã nhận bài của đội {{ ket_qua.ma_doi }} lúc {{ ket_qua.thoi_gian }}.
+      Nếu cần sửa, cứ nộp lại trước hạn - lần nộp sau thay thế lần trước.</div>
+  {% endif %}
+{% endif %}
+<section class="the">
+  <div class="dau-the">
+    <div>
+      <h1>Nộp bài Vòng 1</h1>
+      <p class="phu">Không cần đăng nhập. Nhập đúng mã đội Ban Tổ chức cấp.</p>
+    </div>
+    <div class="han">
+      {% if han_nop %}Hạn nộp: <strong>{{ han_nop | tg }}</strong>{% else %}Chưa đặt hạn nộp{% endif %}<br>
+      {% if duoc_nop %}<span class="nhan nhan-xanh">Đang mở nộp</span>
+      {% else %}<span class="nhan nhan-do">{{ ly_do_khoa }}</span>{% endif %}
+    </div>
+  </div>
+
+  <div class="huong-dan">
+    <ul>
+      <li><strong>Phiếu trả lời</strong>: file Word <code>.docx</code> điền đúng mẫu, mỗi ô chỉ ghi một số hoặc một chữ cái.</li>
+      <li><strong>Bài 1 → Bài 5</strong>: mỗi ô một file <code>.py</code> hoặc <code>.ipynb</code>, gộp phần của thành viên A, B, C của bài đó.</li>
+      <li>Dữ liệu đề cho viết sẵn trong code, không dùng <code>input()</code> hay đọc file. Mỗi file tối đa 2 MB.</li>
+    </ul>
+    Lần nộp sau <strong>thay thế toàn bộ</strong> lần trước, nên mỗi lần nộp hãy chọn lại đủ các file. Ngay sau khi nộp,
+    hệ thống báo nộp thành công hoặc báo lỗi để đội nộp lại; kết quả chấm do Ban Tổ chức công bố.
+  </div>
+
+  <form method="post" action="/nop-bai" enctype="multipart/form-data" class="bieu-mau" id="form-nop">
+    <fieldset {% if not duoc_nop %}disabled{% endif %}>
+      <div class="luoi-2">
+        <label>Mã đội
+          <input name="ma_doi" required maxlength="30" pattern="[A-Za-z0-9_\-]+" value="{{ ma_doi_cu }}" placeholder="VD: D01">
+        </label>
+        <label>Tên đội
+          <input name="ten_doi" maxlength="100">
+        </label>
+      </div>
+
+      <div class="cac-o-nop">
+        <div class="o-nop o-phieu">
+          <label for="o-phieu">Phiếu trả lời <span class="phu">· chỉ nhận .docx</span></label>
+          <input id="o-phieu" type="file" name="phieu" accept=".docx" data-duoi=".docx" required>
+          <div class="loi-file"></div>
+        </div>
+        {% for so in range(1, 6) %}
+        <div class="o-nop">
+          <label for="o-bai{{ so }}">Bài {{ so }}. {{ ten_bai[so] }} <span class="phu">· .py / .ipynb</span></label>
+          <input id="o-bai{{ so }}" type="file" name="bai{{ so }}" accept=".py,.ipynb" data-duoi=".py,.ipynb">
+          <div class="loi-file"></div>
+        </div>
+        {% endfor %}
+      </div>
+
+      <div><button type="submit">Nộp bài</button></div>
+    </fieldset>
+  </form>
+</section>
+
+<script>
+  // Báo lỗi ngay khi chọn sai loại file; server vẫn kiểm tra lại.
+  document.querySelectorAll("input[type=file][data-duoi]").forEach(function (o) {
+    o.addEventListener("change", function () {
+      var duoi = o.dataset.duoi.split(","), loi = o.parentElement.querySelector(".loi-file"), f = o.files[0];
+      loi.textContent = "";
+      o.parentElement.classList.remove("co-loi");
+      if (!f) return;
+      if (!duoi.some(function (d) { return f.name.toLowerCase().endsWith(d); })) {
+        loi.textContent = "Ô này chỉ nhận file " + duoi.join(" hoặc ") + " (đã chọn: " + f.name + ")";
+      } else if (f.size > 2 * 1024 * 1024) {
+        loi.textContent = "File quá 2 MB.";
+      } else {
+        return;
+      }
+      o.value = "";
+      o.parentElement.classList.add("co-loi");
+    });
+  });
+  document.getElementById("form-nop").addEventListener("submit", function (e) {
+    var co_bai = [1, 2, 3, 4, 5].some(function (so) { return document.getElementById("o-bai" + so).files.length; });
+    if (!co_bai) {
+      e.preventDefault();
+      alert("Chưa chọn file bài làm nào.");
+    }
+  });
+</script>
+{% endblock %}

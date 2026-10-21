@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Olympic AI UNETI 2026{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+  {% block head %}{% endblock %}
+</head>
+<body>
+<header class="thanh-tren">
+  <div class="khung thanh-tren-trong">
+    <a class="thuong-hieu" href="{{ '/admin' if la_admin else '/' }}">
+      Olympic AI UNETI 2026 <span>Vòng 1 · UNETI 70: Giải mã hành trình</span>
+    </a>
+    <nav>
+      {% if la_admin %}
+        <a href="/admin">Tổng quan</a>
+        <a href="/admin/xep-hang">Xếp hạng</a>
+        <a href="/">Trang nộp bài</a>
+        <a href="/admin/dang-xuat">Đăng xuất</a>
+      {% else %}
+        <a href="/">Nộp bài</a>
+      {% endif %}
+    </nav>
+  </div>
+</header>
+<main class="khung">
+  {% for loai, noi_dung in thong_bao %}
+    <div class="tb tb-{{ loai }}">{{ noi_dung }}</div>
+  {% endfor %}
+  {% block noi_dung %}{% endblock %}
+</main>
+</body>
+</html>

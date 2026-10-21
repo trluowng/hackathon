@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+{% from "_macro.html" import trang_thai_cham, trang_thai_phan %}
+{% block title %}Đội {{ ma_doi }} · Admin{% endblock %}
+{% block head %}{% if kq and kq.trang_thai in ["cho_cham", "dang_cham"] %}<meta http-equiv="refresh" content="3">{% endif %}{% endblock %}
+{% block noi_dung %}
+<p><a href="/admin">← Tổng quan</a></p>
+
+<section class="the">
+  <div class="dau-the">
+    <div>
+      <h1>Đội {{ ma_doi }}</h1>
+      <p class="phu">{{ thong_tin_doi.ten_doi if thong_tin_doi else "(đội đã bị xóa)" }}</p>
+    </div>
+    {% if bc %}<div class="diem-lon">{{ bc.tong_diem }}<span>/25</span></div>{% endif %}
+  </div>
+
+  {% if not lan_nop %}
+    <p class="phu">Đội chưa nộp bài.</p>
+  {% else %}
+    <div class="hang-ngang">
+      <div>
+        Lần nộp <strong>#{{ lan_nop.id }}</strong> · {{ lan_nop.thoi_gian | tg }}
+        {% if not la_moi_nhat %}<span class="nhan nhan-xam">bản cũ</span>{% endif %}
+        {% if lan_nop.loi_nop %}
+          · <span class="nhan nhan-do">Nộp lỗi · không chấm điểm</span>
+        {% else %}
+          · {{ trang_thai_cham(kq.trang_thai if kq else "chua_cham") }}
+          {% if kq %}<span class="phu">cập nhật {{ kq.cap_nhat | tg }}</span>{% endif %}
+          {% if lan_hop_le and lan_hop_le.id == lan_nop.id %}<span class="nhan nhan-lam">bản đang tính điểm</span>{% endif %}
+        {% endif %}
+      </div>
+      {% if not lan_nop.loi_nop %}
+        <form method="post" action="/admin/cham-lai/{{ lan_nop.id }}">
+          {% if kq %}<button type="submit" class="phu-nut">Chấm lại</button>
+          {% else %}<button type="submit">Chấm bài này</button>{% endif %}
+        </form>
+      {% endif %}
+    </div>
+    {% if lich_su | length > 1 %}
+      <p class="phu">Các lần nộp:
+        {% for ln in lich_su %}<a href="/admin/doi/{{ ma_doi }}?lan={{ ln.id }}" class="chip {% if ln.id == lan_nop.id %}chip-chon{% elif ln.loi_nop %}chip-do{% endif %}">#{{ ln.id }} {{ ln.thoi_gian | tg }}{% if ln.loi_nop %} · lỗi{% endif %}</a>{% endfor %}
+      </p>
+    {% endif %}
+    {% if lan_nop.loi_nop %}
+      <div class="tb tb-loi">
+        <strong>Lần nộp này bị từ chối, không chấm điểm.</strong> Đội đã được báo nộp lỗi để nộp lại. Lý do:
+        <ul>{% for x in lan_nop.loi_nop %}<li>{{ x }}</li>{% endfor %}</ul>
+        {% if lan_hop_le %}Điểm của đội đang tính theo lần nộp hợp lệ gần nhất:
+          <a href="/admin/doi/{{ ma_doi }}?lan={{ lan_hop_le.id }}">#{{ lan_hop_le.id }} lúc {{ lan_hop_le.thoi_gian | tg }}</a>.
+        {% else %}Đội chưa có lần nộp hợp lệ nào nên chưa có điểm.{% endif %}
+      </div>
+    {% endif %}
+    <p>File:
+      {% for f in lan_nop.cac_file %}<a class="chip" href="/admin/file/{{ lan_nop.id }}/{{ f }}">{{ f }}</a>{% endfor %}
+    </p>
+    {% set kt = lan_nop.kiem_tra %}
+    {% if kt and kt.cac_file is defined %}
+    {% set kt_van_de = kt.thieu or kt.o_trong or kt.phieu.van_de or (kt.cac_file | selectattr("van_de") | list) %}
+    <details {% if kt_van_de %}open{% endif %}>
+      <summary>Kiểm tra định dạng lúc nộp
+        {% if kt_van_de %}<span class="nhan nhan-vang">có vấn đề - đội đã được báo</span>
+        {% else %}<span class="nhan nhan-xanh">hợp lệ</span>{% endif %}</summary>
+      <table class="bang nho">
+        <thead><tr><th>Ô</th><th>File</th><th>Nhận ra</th><th>Vấn đề</th></tr></thead>
+        <tbody>
+          <tr><td>Phiếu</td><td><code>{{ kt.phieu.ten or "—" }}</code></td><td></td>
+              <td>{% for v in kt.phieu.van_de %}<div class="sai-chu">{{ v }}</div>{% else %}<span class="ok">✓</span>{% endfor %}</td></tr>
+          {% for f in kt.cac_file %}
+          <tr><td>{{ "Bài %d" % f.o if f.o else "—" }}</td><td><code>{{ f.ten }}</code></td>
+              <td>{% for p in f.phan %}<span class="chip">{{ p }}</span>{% endfor %}</td>
+              <td>{% for v in f.van_de %}<div class="sai-chu">{{ v }}</div>{% else %}<span class="ok">✓</span>{% endfor %}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% if kt.thieu %}<p class="canh">Thiếu phần: {{ kt.thieu | join(", ") }}</p>{% endif %}
+    </details>
+    {% endif %}
+    {% if kq and kq.trang_thai == "loi" %}<pre class="ma">{{ kq.loi }}</pre>{% endif %}
+  {% endif %}
+</section>
+
+{% if bc %}
+<section class="the">
+  <h2>Điểm theo bài</h2>
+  {% for c in bc.phieu_canh_bao %}<p class="canh">Phiếu: {{ c }}</p>{% endfor %}
+  {% if not bc.phieu_nguon %}<p class="canh">Không có phiếu trả lời - điểm theo phiếu bằng 0.</p>{% endif %}
+  <table class="bang bang-diem">
+    <thead>
+      <tr><th>Bài</th><th>Phiếu A</th><th>Phiếu B</th><th>Phiếu C</th><th>Phiếu K</th><th>Mảnh khóa</th>
+          <th class="so">Theo phiếu</th><th class="so">Trừ (code)</th><th class="so">Nộp đủ</th><th class="so">Điểm</th></tr>
+    </thead>
+    <tbody>
+    {% for bai in range(1, 6) %}
+      {% set b = bc.bai[bai | string] %}
+      <tr>
+        <td><strong>Bài {{ bai }}</strong></td>
+        {% for m in ["A", "B", "C"] %}
+          <td class="{{ 'dung' if b.phieu[m].dung else 'sai' }}">{{ b.phieu[m].ghi if b.phieu[m].ghi is not none else "—" }}
+            {% if not b.phieu[m].dung %}<small>(đ/a {{ dap_an[bai][m] }})</small>{% endif %}</td>
+        {% endfor %}
+        <td class="{{ 'dung' if b.phieu.checkpoint.dung else 'sai' }}">{{ b.phieu.checkpoint.K if b.phieu.checkpoint.K is not none else "—" }}</td>
+        <td class="{{ 'dung' if b.phieu.checkpoint.dung else 'sai' }}">{{ b.phieu.checkpoint.manh_khoa or "—" }}
+          {% if not b.phieu.checkpoint.dung %}<small>(đ/a {{ dap_an[bai].K }} {{ dap_an[bai].manh }})</small>{% endif %}</td>
+        <td class="so">{{ b.diem_phieu }}/4</td>
+        <td class="so">{% if b.tru %}<span class="sai-chu">−{{ b.tru | length }}</span>{% else %}0{% endif %}</td>
+        <td class="so">{{ b.nop_du.diem }}</td>
+        <td class="so"><strong>{{ b.diem }}</strong>/5</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+
+  {% set ds_phieu_sai = [] %}{% for bai in range(1, 6) %}{% for s in bc.bai[bai | string].phieu_sai %}{% set _ = ds_phieu_sai.append((bai, s)) %}{% endfor %}{% endfor %}
+  {% set ds_tru = [] %}{% for bai in range(1, 6) %}{% for t in bc.bai[bai | string].tru %}{% set _ = ds_tru.append((bai, t)) %}{% endfor %}{% endfor %}
+  {% if ds_phieu_sai %}
+    <h3>Mất điểm do phiếu ghi sai</h3>
+    <ul class="ds-tru">{% for bai, s in ds_phieu_sai %}<li><strong>Bài {{ bai }} {{ s.muc }}:</strong> {{ s.ly_do }}</li>{% endfor %}</ul>
+  {% endif %}
+  {% if ds_tru %}
+    <h3>Bị trừ điểm do code không xác thực được</h3>
+    <ul class="ds-tru">{% for bai, t in ds_tru %}<li><strong>Bài {{ bai }} {{ t.muc }}:</strong> {{ t.ly_do }}</li>{% endfor %}</ul>
+  {% endif %}
+
+  {% if bc.hidden_challenge %}
+    {% set h = bc.hidden_challenge %}
+    <h3>Hidden Challenge <small class="phu">(không cộng điểm)</small></h3>
+    <p>
+      Từ khóa <span class="{{ 'ok' if h.tu_khoa_dung else 'sai-chu' }}">{{ "đúng" if h.tu_khoa_dung else "sai" }}</span> ·
+      Mật khẩu <span class="{{ 'ok' if h.mat_khau_dung else 'sai-chu' }}">{{ "đúng" if h.mat_khau_dung else "sai" }}</span> ·
+      Thông điệp <span class="{{ 'ok' if h.thong_diep_dung else 'sai-chu' }}">{{ "đúng" if h.thong_diep_dung else "sai" }}</span>
+      ({{ kq.phieu.thong_diep if kq.phieu and kq.phieu.thong_diep else "trống" }})
+    </p>
+  {% endif %}
+</section>
+
+<section>
+  <h2>Chi tiết từng phần</h2>
+  <p class="phu">Phần chờ duyệt hoặc có cảnh báo được mở sẵn. Duyệt tay sẽ thay kết quả tự động và tính lại điểm ngay.</p>
+  {% for bai in range(1, 6) %}
+    <div class="luoi-3">
+    {% for tv in ["A", "B", "C"] %}
+      {% set p = bc.bai[bai | string].thanh_vien[tv] %}
+      {% set khoa = bai ~ tv %}
+      {% set d = duyet.get(khoa) %}
+      <details class="the phan" id="phan-{{ khoa }}" {% if p.trang_thai != "DAT" %}open{% endif %}>
+        <summary>
+          <strong>Bài {{ bai }} · {{ tv }}</strong> {{ trang_thai_phan(p) }}
+          {% if p.tu_dong and d %}<small class="phu">(tự động: {{ p.tu_dong.trang_thai }})</small>{% endif %}
+        </summary>
+        <p class="phu">
+          {% if p.file %}<code>{{ p.file }}</code> · {{ p.bo_cuc }}{% if p.cach_chay %} · chạy {{ p.cach_chay }}{% endif %}
+          {% else %}Không có file{% endif %}
+        </p>
+        {% if p.mong_doi is defined %}<p>Đáp án {{ p.mong_doi }} · code cho {{ p.ket_qua if p.ket_qua is not none else "—" }}</p>{% endif %}
+        {% if p.ly_do %}<ul class="van-de">{% for x in p.ly_do %}<li>{{ x }}</li>{% endfor %}</ul>{% endif %}
+        {% if p.canh_bao %}<ul class="canh-ds">{% for x in p.canh_bao %}<li>{{ x }}</li>{% endfor %}</ul>{% endif %}
+        {% if p.test_an %}
+          <table class="bang nho">
+            <thead><tr><th>Test ẩn</th><th>Thay</th><th class="so">Mong đợi</th><th class="so">Thực tế</th><th></th></tr></thead>
+            <tbody>
+            {% for t in p.test_an %}
+              <tr><td>{{ t.test }}</td><td>{{ t.thay | join(", ") }}</td><td class="so">{{ t.mong_doi }}</td>
+                  <td class="so">{{ t.thuc_te if t.thuc_te is defined and t.thuc_te is not none else "—" }}</td>
+                  <td>{% if not t.ap_dung %}<span class="phu">bỏ qua</span>{% elif t.dat %}<span class="ok">✓</span>{% else %}<span class="sai-chu">✗</span>{% endif %}</td></tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        {% endif %}
+        {% if p.stdout %}<details><summary class="phu">Output khi chạy</summary><pre class="ma">{{ p.stdout }}</pre></details>{% endif %}
+        {% if p.loi_chay %}<details><summary class="phu">Lỗi chi tiết</summary><pre class="ma">{{ p.loi_chay }}</pre></details>{% endif %}
+
+        <form method="post" action="/admin/duyet/{{ lan_nop.id }}" class="duyet">
+          <input type="hidden" name="phan" value="{{ khoa }}">
+          <input name="ghi_chu" placeholder="Ghi chú (tuỳ chọn)" value="{{ d.ghi_chu if d else '' }}">
+          <button name="quyet" value="dat" class="nut-xanh">Duyệt đạt</button>
+          <button name="quyet" value="khong_dat" class="nut-do">Không đạt</button>
+          {% if d %}<button name="quyet" value="bo" class="phu-nut">Bỏ duyệt</button>{% endif %}
+        </form>
+        {% if d %}<p class="phu">Đã duyệt {{ "đạt" if d.dat else "không đạt" }} lúc {{ d.thoi_gian | tg }}{% if d.ghi_chu %}: “{{ d.ghi_chu }}”{% endif %}</p>{% endif %}
+      </details>
+    {% endfor %}
+    </div>
+  {% endfor %}
+</section>
+{% endif %}
+
+{% if thong_tin_doi %}
+<section class="the vung-nguy-hiem">
+  <h2>Xóa đội</h2>
+  <form method="post" action="/admin/doi/{{ ma_doi }}/xoa" onsubmit="return confirm('Xóa đội {{ ma_doi }}? Đội sẽ không đăng nhập được nữa.')">
+    <button type="submit" class="nut-do">Xóa đội {{ ma_doi }}</button>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

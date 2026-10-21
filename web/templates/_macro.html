@@ -1,0 +1,18 @@
+{% macro trang_thai_cham(tt) -%}
+  {%- set ten = {"cho_cham": "Chờ chấm", "dang_cham": "Đang chấm", "da_cham": "Đã chấm", "loi": "Lỗi khi chấm",
+                 "bo_qua": "Bỏ qua (có bản mới)", "chua_cham": "Chưa chấm"} -%}
+  {%- set mau = {"cho_cham": "vang", "dang_cham": "vang", "da_cham": "xanh", "loi": "do", "bo_qua": "xam",
+                 "chua_cham": "xam"} -%}
+  {%- if tt -%}<span class="nhan nhan-{{ mau.get(tt, 'xam') }}">{{ ten.get(tt, tt) }}</span>
+  {%- else -%}<span class="nhan nhan-xam">Chưa nộp</span>{%- endif -%}
+{%- endmacro %}
+
+{% macro trang_thai_phan(p) -%}
+  {%- if p.trang_thai == "DAT" -%}<span class="nhan nhan-xanh">Đạt</span>
+  {%- elif p.trang_thai == "KHONG_DAT" -%}<span class="nhan nhan-do">Không đạt</span>
+  {%- elif p.trang_thai == "CAN_REVIEW" and p.diem -%}<span class="nhan nhan-vang">Đạt · nên xem</span>
+  {%- elif p.trang_thai == "CAN_REVIEW" -%}<span class="nhan nhan-vang">Chờ duyệt (tạm 0)</span>
+  {%- elif p.trang_thai == "DUYET_DAT" -%}<span class="nhan nhan-lam">Duyệt: đạt</span>
+  {%- elif p.trang_thai == "DUYET_KHONG_DAT" -%}<span class="nhan nhan-do">Duyệt: không đạt</span>
+  {%- else -%}<span class="nhan nhan-xam">{{ p.trang_thai }}</span>{%- endif -%}
+{%- endmacro %}

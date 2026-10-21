@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Xếp hạng · Admin{% endblock %}
+{% block noi_dung %}
+<section class="the">
+  <div class="dau-the">
+    <h1>Bảng xếp hạng Vòng 1</h1>
+    <a class="nut" href="/admin/xep-hang.csv">Tải CSV</a>
+  </div>
+  {% if tam_tinh %}
+    <div class="tb tb-loi">Bảng đang <strong>tạm tính</strong>: còn phần chờ duyệt hoặc đội chưa chấm xong.</div>
+  {% endif %}
+  <p class="phu">Thứ tự: tổng điểm → đã giải đúng Hidden Challenge → thời điểm nộp đáp án Hidden Challenge đúng sớm hơn.</p>
+  <table class="bang">
+    <thead>
+      <tr><th class="so">Hạng</th><th>Mã đội</th><th>Tên đội</th><th class="so">Tổng</th>
+          <th class="so">B1</th><th class="so">B2</th><th class="so">B3</th><th class="so">B4</th><th class="so">B5</th>
+          <th>Hidden Challenge đúng lúc</th><th class="so">Chờ duyệt</th></tr>
+    </thead>
+    <tbody>
+    {% for h in co_diem %}
+      <tr>
+        <td class="so"><strong>{{ loop.index }}</strong></td>
+        <td><a href="/admin/doi/{{ h.doi.ma_doi }}">{{ h.doi.ma_doi }}</a></td>
+        <td>{{ h.doi.ten_doi }}</td>
+        <td class="so"><strong>{{ h.tong }}</strong></td>
+        {% for d in h.diem_bai %}<td class="so">{{ d }}</td>{% endfor %}
+        <td>{{ h.hidden_luc | tg if h.hidden_luc else "—" }}</td>
+        <td class="so">{% if h.cho_duyet %}<span class="nhan nhan-vang">{{ h.cho_duyet }}</span>{% else %}0{% endif %}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="11" class="phu">Chưa có đội nào được chấm.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if chua_co %}
+    <p class="phu">Chưa có điểm: {% for h in chua_co %}<a href="/admin/doi/{{ h.doi.ma_doi }}" class="chip {% if h.nop_loi and not h.lan_nop %}chip-do{% endif %}">{{ h.doi.ma_doi }}{% if h.nop_loi and not h.lan_nop %} · chỉ có lần nộp lỗi{% endif %}</a>{% endfor %}</p>
+  {% endif %}
+</section>
+{% endblock %}

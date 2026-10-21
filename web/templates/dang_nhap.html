@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Đăng nhập admin · Olympic AI UNETI 2026{% endblock %}
+{% block noi_dung %}
+<section class="the the-hep">
+  <h1>Đăng nhập Ban Tổ chức</h1>
+  <form method="post" action="/admin/dang-nhap" class="bieu-mau">
+    <label>Tài khoản
+      <input name="tai_khoan" required autofocus autocomplete="username">
+    </label>
+    <label>Mật khẩu
+      <input type="password" name="mat_khau" required autocomplete="current-password">
+    </label>
+    <button type="submit">Đăng nhập</button>
+  </form>
+  <p class="phu"><a href="/">← Trang nộp bài</a></p>
+</section>
+{% endblock %}

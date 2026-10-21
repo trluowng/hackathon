@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}{{ ten }} · Admin{% endblock %}
+{% block noi_dung %}
+<p><a href="/admin/doi/{{ lan_nop.ma_doi }}?lan={{ lan_nop.id }}">← Đội {{ lan_nop.ma_doi }}, lần nộp #{{ lan_nop.id }}</a></p>
+<section class="the">
+  <h1><code>{{ ten }}</code></h1>
+  {% if loi %}<p class="canh">{{ loi }}</p>{% endif %}
+
+  {% if dong is not none %}
+    <pre class="ma co-so-dong">{% for d in dong %}<span class="so-dong">{{ loop.index }}</span>{{ d }}
+{% endfor %}</pre>
+  {% endif %}
+
+  {% if o_code is not none %}
+    {% for loai, src in o_code %}
+      {% if loai == "code" %}<pre class="ma">{{ src }}</pre>
+      {% else %}<div class="o-md">{{ src }}</div>{% endif %}
+    {% endfor %}
+  {% endif %}
+
+  {% if phieu %}
+    {% for c in phieu_canh_bao %}<p class="canh">{{ c }}</p>{% endfor %}
+    <p>Mã đội: <strong>{{ phieu.ma_doi or "—" }}</strong> · Tên đội: {{ phieu.ten_doi or "—" }}</p>
+    <table class="bang">
+      <thead><tr><th>Bài</th><th>A</th><th>B</th><th>C</th><th>K</th><th>Mảnh khóa</th></tr></thead>
+      <tbody>
+      {% for bai in ["1", "2", "3", "4", "5"] %}
+        {% set b = phieu.bai.get(bai, {}) %}
+        <tr><td>Bài {{ bai }}</td>
+          {% for k in ["A", "B", "C", "K", "manh_khoa"] %}<td>{{ b.get(k) if b.get(k) is not none else "—" }}</td>{% endfor %}</tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <p>Từ khóa: <strong>{{ phieu.tu_khoa or "—" }}</strong> · Mật khẩu: <strong>{{ phieu.mat_khau or "—" }}</strong></p>
+    <p>Giải mã: A “{{ phieu.hidden.get("A", "") }}” · B “{{ phieu.hidden.get("B", "") }}” · C “{{ phieu.hidden.get("C", "") }}”</p>
+    <p>Thông điệp cuối: <strong>{{ phieu.thong_diep or "—" }}</strong></p>
+  {% endif %}
+</section>
+{% endblock %}
