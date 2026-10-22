@@ -17,6 +17,8 @@ import os
 import re
 import secrets
 import sys
+import time
+import unicodedata
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Optional
@@ -33,8 +35,9 @@ from starlette.middleware.sessions import SessionMiddleware  # noqa: E402
 
 import hang_doi_cham  # noqa: E402
 import kho  # noqa: E402
-from cham import CAN_REVIEW, DAP_AN_K, DE_THI, MANH_KHOA, tinh_diem  # noqa: E402
+from cham import DAP_AN_K, DE_THI, MANH_KHOA, tinh_diem  # noqa: E402
 from doc_phieu_word import LoiDocPhieu, doc_phieu  # noqa: E402
+from gio import bay_gio_dt  # noqa: E402
 from kiem_tra_nop import kiem_tra  # noqa: E402
 
 ADMIN_TAI_KHOAN = os.environ.get("ADMIN_TAI_KHOAN", "admin")
@@ -97,7 +100,7 @@ def trang_thai_nop():
     han = kho.doc_cai_dat("han_nop", "")
     if kho.doc_cai_dat("mo_nop", "1") != "1":
         return False, "Ban Tổ chức đang khóa nộp bài.", han
-    if han and datetime.now() > datetime.fromisoformat(han):
+    if han and bay_gio_dt() > datetime.fromisoformat(han):
         return False, "Đã hết hạn nộp bài.", han
     return True, "", han
 
@@ -137,18 +140,11 @@ def tong_hop_doi(doi):
     lan_cuoi = kho.lan_nop_moi_nhat(doi["ma_doi"], ca_nop_loi=True)     # lần nộp gần nhất, kể cả lỗi
     hang = {"doi": doi, "lan_nop": lan_nop, "lan_cuoi": lan_cuoi,
             "nop_loi": lan_cuoi if lan_cuoi and lan_cuoi["loi_nop"] else None,
-            "so_lan": len(kho.ds_lan_nop(doi["ma_doi"])),
+            "so_lan": kho.dem_lan_nop(doi["ma_doi"]),
             "trang_thai": None, "tong": None, "diem_bai": [], "cho_duyet": 0, "nen_xem": 0,
             "hidden_luc": kho.hidden_dung_som_nhat(doi["ma_doi"])}
     if lan_nop:
-        kq, bc = bao_cao_hien_tai(lan_nop["id"])
-        hang["trang_thai"] = kq["trang_thai"] if kq else "chua_cham"
-        if bc:
-            cac_phan = [p for b in bc["bai"].values() for p in b["thanh_vien"].values()]
-            hang["tong"] = bc["tong_diem"]
-            hang["diem_bai"] = [bc["bai"][str(i)]["diem"] for i in range(1, 6)]
-            hang["cho_duyet"] = sum(p["trang_thai"] == CAN_REVIEW and not p["diem"] for p in cac_phan)
-            hang["nen_xem"] = sum(p["trang_thai"] == CAN_REVIEW and p["diem"] for p in cac_phan)
+        hang.update(kho.lay_tom_tat(lan_nop["id"]))
     return hang
 
 
@@ -163,9 +159,12 @@ def bang_xep_hang():
 
 @app.get("/")
 def nop_bai_form(request: Request):
+    if kho.NOP_BAI_NGOAI:  # bài nộp ở trang Apps Script
+        return RedirectResponse(kho.NOP_BAI_NGOAI, status_code=307)
     duoc_nop, ly_do_khoa, han_nop = trang_thai_nop()
     return trang(request, "nop_bai.html", duoc_nop=duoc_nop, ly_do_khoa=ly_do_khoa, han_nop=han_nop,
-                 ma_doi_cu=request.session.get("ma_doi_cu", ""), ten_bai=TEN_BAI,
+                 ma_doi_cu=request.session.get("ma_doi_cu", ""), ten_doi_cu=request.session.get("ten_doi_cu", ""),
+                 ten_bai=TEN_BAI,
                  ket_qua=request.session.pop("ket_qua_nop", None))
 
 
@@ -177,18 +176,23 @@ def _nop_loi(request, loi):
     return ve("/")
 
 
-def _van_de_can_bao(kt):
-    """Vấn đề định dạng của lần nộp đã nhận (để đội biết mà nộp lại); không có thông tin đúng/sai."""
-    van_de = []
-    for f in kt["cac_file"]:
-        ten_o = "Bài %d" % f["o"] if f.get("o") else f["ten"]
-        van_de += ["%s: %s" % (ten_o, v) for v in f["van_de"]]
-    van_de += ["Phiếu trả lời: %s" % v for v in kt["phieu"]["van_de"]]
-    if kt.get("o_trong"):
-        van_de.append("Chưa nộp file cho: " + ", ".join("Bài %d" % so for so in kt["o_trong"]))
-    if kt["thieu"]:
-        van_de.append("Chưa thấy bài làm cho các phần: " + ", ".join(kt["thieu"]))
-    return van_de[:20]
+def _chuan_ten(s):
+    """So tên không phân biệt hoa/thường, khoảng trắng thừa, kiểu mã hóa dấu (NFC/NFD) của Word."""
+    return " ".join(unicodedata.normalize("NFC", s or "").casefold().split())
+
+
+def _doi_chieu_phieu(phieu, ma_doi, ten_doi):
+    """Mã đội và tên đội nhập khi nộp phải khớp với phiếu trả lời; trả về danh sách lỗi."""
+    loi = []
+    if not phieu["ma_doi"]:
+        loi.append("Phiếu trả lời chưa ghi Mã đội.")
+    elif phieu["ma_doi"].replace(" ", "").upper() != ma_doi:
+        loi.append("Mã đội trong phiếu trả lời (%s) khác mã đội đã nhập (%s)." % (phieu["ma_doi"], ma_doi))
+    if not phieu["ten_doi"]:
+        loi.append("Phiếu trả lời chưa ghi Tên đội.")
+    elif _chuan_ten(phieu["ten_doi"]) != _chuan_ten(ten_doi):
+        loi.append("Tên đội trong phiếu trả lời (%s) khác tên đội đã nhập (%s)." % (phieu["ten_doi"], ten_doi))
+    return loi
 
 
 @app.post("/nop-bai")
@@ -197,6 +201,8 @@ async def nop_bai(request: Request, ma_doi: str = Form(""), ten_doi: str = Form(
                   bai1: Optional[UploadFile] = File(None), bai2: Optional[UploadFile] = File(None),
                   bai3: Optional[UploadFile] = File(None), bai4: Optional[UploadFile] = File(None),
                   bai5: Optional[UploadFile] = File(None)):
+    if kho.NOP_BAI_NGOAI:
+        return ve(kho.NOP_BAI_NGOAI)
     ma_doi, ten_doi = ma_doi.strip().upper(), ten_doi.strip()[:100]
     duoc_nop, ly_do_khoa, _ = trang_thai_nop()
     if not duoc_nop:
@@ -206,6 +212,10 @@ async def nop_bai(request: Request, ma_doi: str = Form(""), ten_doi: str = Form(
         thong_bao(request, "Mã đội chỉ gồm chữ không dấu, số, '-' hoặc '_' (tối đa 30 ký tự).", "loi")
         return ve("/")
     request.session["ma_doi_cu"] = ma_doi
+    request.session["ten_doi_cu"] = ten_doi
+    if not ten_doi:
+        thong_bao(request, "Chưa nhập tên đội (phải giống tên đội ghi trong phiếu trả lời).", "loi")
+        return ve("/")
 
     # Đọc và kiểm tra từng ô; có lỗi ở bất kỳ ô nào thì lần nộp bị từ chối (không chấm)
     cac_o = [("Phiếu trả lời", "phieu", phieu, (".docx",))] + \
@@ -219,11 +229,10 @@ async def nop_bai(request: Request, ma_doi: str = Form(""), ten_doi: str = Form(
         loi.append("Chưa chọn file bài làm nào.")
 
     # Lưu file với tên chuẩn theo ô - kể cả lần nộp lỗi, để admin xem được đội đã nộp gì
-    thoi_gian = datetime.now()
+    thoi_gian = bay_gio_dt()
     tg = thoi_gian.isoformat(timespec="seconds")
-    thu_muc = os.path.join(kho.THU_MUC_BAI_NOP, ma_doi, thoi_gian.strftime("%Y%m%d-%H%M%S-%f"))
-    os.makedirs(thu_muc)
-    da_luu, o_cua_file = [], {}
+    thu_muc = kho.tao_thu_muc_nop(ma_doi, thoi_gian)
+    da_luu = []
     for _, khoa, ten_file, noi_dung, _ in da_doc:
         if len(noi_dung) > DUNG_LUONG_TOI_DA:
             continue
@@ -231,33 +240,26 @@ async def nop_bai(request: Request, ma_doi: str = Form(""), ten_doi: str = Form(
         with open(os.path.join(thu_muc, ten), "wb") as g:
             g.write(noi_dung)
         da_luu.append(ten)
-        if khoa != "phieu":
-            o_cua_file[ten] = khoa
-    kho.luu_doi(ma_doi, ten_doi)
+    kho.luu_doi(ma_doi, ten_doi, tu_nop=True)
     if loi:
-        kho.them_lan_nop(ma_doi, tg, thu_muc, da_luu, {}, False, loi_nop=loi)
+        await run_in_threadpool(kho.them_lan_nop, ma_doi, tg, thu_muc, da_luu, {}, False, loi, ten_doi)
         return _nop_loi(request, loi)
 
-    ket_qua_kt, hidden_dung = await run_in_threadpool(kiem_tra, thu_muc, ma_doi)
+    ket_qua_kt, hidden_dung = await run_in_threadpool(kiem_tra, thu_muc)
     if not ket_qua_kt["phieu"]["hop_le"]:
         # Phiếu là căn cứ chấm: không đọc được hoặc sai mẫu thì từ chối lần nộp
         chi_tiet = "; ".join(ket_qua_kt["phieu"]["van_de"]) or "không rõ"
         loi = ["Phiếu trả lời không đọc được hoặc không đúng mẫu của Ban Tổ chức (%s)." % chi_tiet]
-        kho.them_lan_nop(ma_doi, tg, thu_muc, da_luu, ket_qua_kt, False, loi_nop=loi)
+    else:
+        loi = _doi_chieu_phieu(ket_qua_kt["phieu"], ma_doi, ten_doi)
+    if loi:
+        await run_in_threadpool(kho.them_lan_nop, ma_doi, tg, thu_muc, da_luu, ket_qua_kt, False, loi, ten_doi)
         return _nop_loi(request, loi)
-    for f in ket_qua_kt["cac_file"]:
-        so = f["o"] = o_cua_file.get(f["ten"])
-        bai_nhan_ra = sorted({p[0] for p in f["phan"]})
-        if so and bai_nhan_ra and str(so) not in bai_nhan_ra:
-            f["van_de"].append("File nộp ở ô Bài %d nhưng nội dung là Bài %s - kiểm tra có chọn nhầm file không"
-                               % (so, ", ".join(bai_nhan_ra)))
-    ket_qua_kt["o_trong"] = [so for so in range(1, 6) if so not in o_cua_file.values()
-                             and any(p.startswith(str(so)) for p in ket_qua_kt["thieu"])]
-    # Không chấm ngay khi nộp (tránh quá tải khi nhiều đội nộp cùng lúc); admin bấm chấm sau.
-    lan_nop_id = kho.them_lan_nop(ma_doi, tg, thu_muc, da_luu, ket_qua_kt, hidden_dung)
-    request.session["ket_qua_nop"] = {"ma_doi": ma_doi, "lan": lan_nop_id,
-                                      "thoi_gian": thoi_gian.strftime("%H:%M:%S %d/%m/%Y"),
-                                      "van_de": _van_de_can_bao(ket_qua_kt)}
+    # Mã đội, tên đội đúng và đủ -> nộp thành công. Không chấm ngay (admin bấm chấm sau);
+    # kết quả kiểm tra định dạng chỉ lưu cho admin xem, đội không thấy.
+    await run_in_threadpool(kho.them_lan_nop, ma_doi, tg, thu_muc, da_luu, ket_qua_kt, hidden_dung, None, ten_doi)
+    request.session["ket_qua_nop"] = {"ma_doi": ma_doi, "ten_doi": ten_doi,
+                                      "thoi_gian": thoi_gian.strftime("%H:%M:%S %d/%m/%Y")}
     return ve("/")
 
 
@@ -284,7 +286,8 @@ def admin_tong_quan(request: Request):
     if not la_admin(request):
         return ve("/admin/dang-nhap")
     hang = [tong_hop_doi(d) for d in kho.ds_doi()]
-    return trang(request, "admin_tong_quan.html", hang=hang,
+    return trang(request, "admin_tong_quan.html", hang=hang, cham_dong_bo=hang_doi_cham.DONG_BO,
+                 link_nop_bai=kho.NOP_BAI_NGOAI or str(request.base_url),
                  so_chua_cham=sum(h["trang_thai"] == "chua_cham" for h in hang),
                  han_nop=kho.doc_cai_dat("han_nop", ""), mo_nop=kho.doc_cai_dat("mo_nop", "1") == "1")
 
@@ -337,37 +340,66 @@ def admin_cai_dat(request: Request, han_nop: str = Form(""), mo_nop: str = Form(
 
 
 @app.post("/admin/cham-lai/{lan_nop_id}")
-def admin_cham_lai(request: Request, lan_nop_id: int):
+def admin_cham_lai(request: Request, lan_nop_id: str, quay_ve: str = Form("")):
     if not la_admin(request):
         return ve("/admin/dang-nhap")
     lan_nop = kho.lay_lan_nop(lan_nop_id)
-    if lan_nop and lan_nop["loi_nop"]:
-        thong_bao(request, "Lần nộp #%d là lần nộp lỗi, không chấm điểm." % lan_nop_id, "loi")
-        return ve("/admin/doi/%s?lan=%d" % (lan_nop["ma_doi"], lan_nop_id))
-    if lan_nop:
+    if not lan_nop:
+        return ve("/admin")
+    trang_doi = "/admin/doi/%s" % lan_nop["ma_doi"]
+    moi_nhat = kho.lan_nop_moi_nhat(lan_nop["ma_doi"])
+    if lan_nop["loi_nop"]:
+        thong_bao(request, "Lần nộp thứ %d là lần nộp lỗi, không chấm điểm." % lan_nop["so"], "loi")
+    elif not moi_nhat or moi_nhat["id"] != lan_nop_id:
+        thong_bao(request, "Chỉ chấm lần nộp thành công cuối cùng của đội (lần thứ %d)." % moi_nhat["so"], "loi")
+    else:
         hang_doi_cham.dua_vao(lan_nop_id)
-        thong_bao(request, "Đã đưa lần nộp #%d vào hàng đợi chấm." % lan_nop_id)
-        return ve("/admin/doi/%s?lan=%d" % (lan_nop["ma_doi"], lan_nop_id))
-    return ve("/admin")
+        if hang_doi_cham.DONG_BO:
+            tom_tat = kho.lay_tom_tat(lan_nop_id)
+            thong_bao(request, "Đội %s: đã chấm xong lần nộp thứ %d - %s." % (
+                lan_nop["ma_doi"], lan_nop["so"],
+                "%s/25 điểm" % tom_tat["tong"] if tom_tat["tong"] is not None else "có lỗi khi chấm, xem chi tiết"))
+        else:
+            thong_bao(request, "Đội %s: đã đưa lần nộp thứ %d vào hàng đợi chấm." % (lan_nop["ma_doi"], lan_nop["so"]))
+    return ve("/admin" if quay_ve == "tong_quan" else trang_doi)
+
+
+THOI_GIAN_MOT_LUOT_CHAM = 240  # giây; chế độ đồng bộ (Vercel) mỗi request tối đa 300 giây
 
 
 def _dua_vao_cham(chi_chua_cham):
-    """Đưa lần nộp hợp lệ mới nhất của mỗi đội vào hàng đợi chấm; trả về số lần nộp."""
-    so = 0
+    """Chấm lần nộp hợp lệ mới nhất của các đội. Trả về (số đã chấm/đưa vào hàng đợi, số còn lại).
+
+    Chế độ đồng bộ: chấm lần lượt trong một request, dừng khi gần hết thời gian - admin bấm tiếp phần còn lại.
+    """
+    can_cham = []
     for doi in kho.ds_doi():
         lan_nop = kho.lan_nop_moi_nhat(doi["ma_doi"])
-        if lan_nop and not (chi_chua_cham and kho.lay_ket_qua(lan_nop["id"])):
-            hang_doi_cham.dua_vao(lan_nop["id"])
-            so += 1
-    return so
+        if lan_nop and not (chi_chua_cham and kho.lay_tom_tat(lan_nop["id"])["trang_thai"] != "chua_cham"):
+            can_cham.append(lan_nop["id"])
+    het_gio = time.time() + THOI_GIAN_MOT_LUOT_CHAM
+    for i, lan_nop_id in enumerate(can_cham):
+        if hang_doi_cham.DONG_BO and time.time() > het_gio:
+            return i, len(can_cham) - i
+        hang_doi_cham.dua_vao(lan_nop_id)
+    return len(can_cham), 0
+
+
+def _bao_da_cham(request, so, con_lai, chu):
+    if not so and not con_lai:
+        thong_bao(request, "Không còn bài nào %s." % chu)
+    elif hang_doi_cham.DONG_BO:
+        thong_bao(request, "Đã chấm xong %d đội." % so + (" Còn %d đội - bấm lại nút để chấm tiếp." % con_lai
+                                                          if con_lai else ""), "loi" if con_lai else "ok")
+    else:
+        thong_bao(request, "Đã đưa %d bài vào hàng đợi chấm." % so)
 
 
 @app.post("/admin/cham-chua-cham")
 def admin_cham_chua_cham(request: Request):
     if not la_admin(request):
         return ve("/admin/dang-nhap")
-    so = _dua_vao_cham(chi_chua_cham=True)
-    thong_bao(request, "Đã đưa %d bài chưa chấm vào hàng đợi chấm." % so if so else "Không còn bài nào chưa chấm.")
+    _bao_da_cham(request, *_dua_vao_cham(chi_chua_cham=True), "chưa chấm")
     return ve("/admin")
 
 
@@ -375,31 +407,43 @@ def admin_cham_chua_cham(request: Request):
 def admin_cham_tat_ca(request: Request):
     if not la_admin(request):
         return ve("/admin/dang-nhap")
-    so = _dua_vao_cham(chi_chua_cham=False)
-    thong_bao(request, "Đã đưa %d lần nộp (mới nhất của mỗi đội) vào hàng đợi chấm lại." % so)
+    _bao_da_cham(request, *_dua_vao_cham(chi_chua_cham=False), "để chấm")
     return ve("/admin")
 
 
 @app.get("/admin/doi/{ma_doi}")
-def admin_doi(request: Request, ma_doi: str, lan: int = None):
+def admin_doi(request: Request, ma_doi: str, lan: str = None):
     if not la_admin(request):
         return ve("/admin/dang-nhap")
     doi = kho.lay_doi(ma_doi)
     lich_su = kho.ds_lan_nop(ma_doi)
-    lan_nop = kho.lay_lan_nop(lan) if lan else (lich_su[0] if lich_su else None)
+    lan_hop_le = kho.lan_nop_moi_nhat(ma_doi)  # lần nộp thành công cuối cùng = bản được chấm
+    # Mặc định mở bản được chấm; chưa có thì mở lần nộp gần nhất. Luôn lấy bản đầy đủ (file, kiểm tra định dạng).
+    id_xem = lan or (lan_hop_le["id"] if lan_hop_le else (lich_su[0]["id"] if lich_su else None))
+    lan_nop = kho.lay_lan_nop(id_xem) if id_xem else None
     if lan_nop and lan_nop["ma_doi"] != ma_doi:
         lan_nop = None
     kq, bc = bao_cao_hien_tai(lan_nop["id"]) if lan_nop else (None, None)
+
+    # Bảng lịch sử: trạng thái nộp + trạng thái chấm của từng lần
+    cac_lan = []
+    for ln in lich_su:
+        dong = {"ln": ln, "la_ban_cham": bool(lan_hop_le and ln["id"] == lan_hop_le["id"]),
+                "trang_thai_cham": None, "diem": None}
+        if not ln["loi_nop"]:
+            tom_tat = kho.lay_tom_tat(ln["id"])
+            dong["trang_thai_cham"], dong["diem"] = tom_tat["trang_thai"], tom_tat["tong"]
+        cac_lan.append(dong)
     dap_an = {bai: {**{tv: DE_THI[bai][tv].dap_an for tv in "ABC"}, "K": DAP_AN_K[bai], "manh": MANH_KHOA[bai - 1]}
               for bai in range(1, 6)}
     return trang(request, "admin_doi.html", ma_doi=ma_doi, thong_tin_doi=doi, lich_su=lich_su, lan_nop=lan_nop,
                  kq=kq, bc=bc, duyet=kho.ds_duyet(lan_nop["id"]) if lan_nop else {}, dap_an=dap_an,
                  la_moi_nhat=bool(lich_su and lan_nop and lan_nop["id"] == lich_su[0]["id"]),
-                 lan_hop_le=kho.lan_nop_moi_nhat(ma_doi))
+                 lan_hop_le=lan_hop_le, cac_lan=cac_lan)
 
 
 @app.post("/admin/duyet/{lan_nop_id}")
-def admin_duyet(request: Request, lan_nop_id: int, phan: str = Form(...), quyet: str = Form(...),
+def admin_duyet(request: Request, lan_nop_id: str, phan: str = Form(...), quyet: str = Form(...),
                 ghi_chu: str = Form("")):
     if not la_admin(request):
         return ve("/admin/dang-nhap")
@@ -409,32 +453,30 @@ def admin_duyet(request: Request, lan_nop_id: int, phan: str = Form(...), quyet:
     kho.duyet(lan_nop_id, phan, {"dat": True, "khong_dat": False, "bo": None}[quyet], ghi_chu.strip())
     thong_bao(request, "Bài %s phần %s: %s." % (phan[0], phan[1], {"dat": "đã duyệt ĐẠT", "khong_dat": "đã duyệt KHÔNG ĐẠT",
                                                                   "bo": "đã bỏ duyệt, dùng kết quả tự động"}[quyet]))
-    return ve("/admin/doi/%s?lan=%d#phan-%s" % (lan_nop["ma_doi"], lan_nop_id, phan))
+    return ve("/admin/doi/%s?lan=%s#phan-%s" % (lan_nop["ma_doi"], lan_nop_id, phan))
 
 
 @app.get("/admin/file/{lan_nop_id}/{ten}")
-def admin_xem_file(request: Request, lan_nop_id: int, ten: str):
+def admin_xem_file(request: Request, lan_nop_id: str, ten: str):
     if not la_admin(request):
         return ve("/admin/dang-nhap")
     lan_nop = kho.lay_lan_nop(lan_nop_id)
     if not lan_nop or ten not in lan_nop["cac_file"]:
         return ve("/admin")
-    duong_dan = os.path.join(lan_nop["thu_muc"], ten)
+    noi_dung = kho.doc_file(lan_nop, ten)
     ctx = {"lan_nop": lan_nop, "ten": ten, "dong": None, "o_code": None, "phieu": None, "loi": None}
     if ten.lower().endswith(".py"):
-        with open(duong_dan, encoding="utf-8", errors="replace") as f:
-            ctx["dong"] = f.read().splitlines()
+        ctx["dong"] = noi_dung.decode("utf-8", errors="replace").splitlines()
     elif ten.lower().endswith(".ipynb"):
         try:
-            with open(duong_dan, encoding="utf-8") as f:
-                nb = json.load(f)
+            nb = json.loads(noi_dung)
             ctx["o_code"] = [(o.get("cell_type"), "".join(o.get("source", "")) if isinstance(o.get("source"), list)
                               else o.get("source", "")) for o in nb.get("cells", [])]
         except ValueError as e:
             ctx["loi"] = "Notebook không hợp lệ: %s" % e
     elif ten.lower().endswith(".docx"):
         try:
-            ctx["phieu"], ctx["phieu_canh_bao"] = doc_phieu(duong_dan)
+            ctx["phieu"], ctx["phieu_canh_bao"] = doc_phieu(io.BytesIO(noi_dung))
         except LoiDocPhieu as e:
             ctx["loi"] = str(e)
     else:

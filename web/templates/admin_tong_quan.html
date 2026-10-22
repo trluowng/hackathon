@@ -17,30 +17,47 @@
       <a class="nut phu-nut" href="/admin/xep-hang">Bảng xếp hạng</a>
     </div>
   </div>
-  <p class="phu">Bài nộp không được chấm tự động. Bấm chấm khi muốn (vd sau khi hết hạn nộp); mỗi đội chấm mất vài giây,
-    trang tự cập nhật khi đang chấm.</p>
-  <table class="bang">
+  <p class="phu">Link gửi các đội để nộp bài: <a href="{{ link_nop_bai }}" target="_blank">{{ link_nop_bai }}</a></p>
+  <p class="phu">Mỗi đội chỉ chấm <strong>lần nộp thành công cuối cùng</strong>. Bấm vào một đội để xem các lần nộp và
+    trạng thái từng lần; bấm <strong>Chấm</strong> ở cuối dòng để chấm riêng đội đó.</p>
+  {% if cham_dong_bo %}
+  <p class="phu">Chế độ chấm ngay: bấm Chấm thì đợi vài giây tới khi trang tải lại. "Chấm các bài chưa chấm" mỗi lượt
+    chấm tối đa khoảng 4 phút; nếu còn đội chưa chấm, bấm lại để chấm tiếp.</p>
+  {% endif %}
+  <table class="bang bang-doi">
     <thead>
-      <tr><th>Mã đội</th><th>Tên đội</th><th>Số lần nộp</th><th>Lần nộp cuối</th><th>Trạng thái</th>
+      <tr><th>Mã đội</th><th>Tên đội</th><th class="so">Số lần nộp</th><th>Lần nộp cuối</th><th>Trạng thái</th>
           <th class="so">Điểm</th><th class="so">Chờ duyệt</th><th class="so">Nên xem</th><th></th></tr>
     </thead>
     <tbody>
     {% for h in hang %}
-      <tr>
-        <td><strong>{{ h.doi.ma_doi }}</strong></td>
+      <tr class="hang-bam" data-href="/admin/doi/{{ h.doi.ma_doi }}">
+        <td><a href="/admin/doi/{{ h.doi.ma_doi }}"><strong>{{ h.doi.ma_doi }}</strong></a></td>
         <td>{{ h.doi.ten_doi }}</td>
-        <td>{{ h.so_lan }}</td>
+        <td class="so">{{ h.so_lan }}</td>
         <td>{{ h.lan_cuoi.thoi_gian | tg if h.lan_cuoi else "—" }}</td>
         <td>
           {% if h.nop_loi %}
-            <span class="nhan nhan-do">Nộp lỗi · không chấm</span>
-            {% if h.lan_nop %}<br><small class="phu">đang tính bản #{{ h.lan_nop.id }}: {{ trang_thai_cham(h.trang_thai) }}</small>{% endif %}
+            <span class="nhan nhan-do">Lần cuối nộp lỗi</span>
+            {% if h.lan_nop %}<br><small class="phu">chấm lần {{ h.lan_nop.so }}: {{ trang_thai_cham(h.trang_thai) }}</small>{% endif %}
           {% else %}{{ trang_thai_cham(h.trang_thai) }}{% endif %}
         </td>
         <td class="so"><strong>{{ h.tong if h.tong is not none else "—" }}</strong>{% if h.tong is not none %}/25{% endif %}</td>
         <td class="so">{% if h.cho_duyet %}<span class="nhan nhan-vang">{{ h.cho_duyet }}</span>{% else %}0{% endif %}</td>
         <td class="so">{{ h.nen_xem }}</td>
-        <td><a href="/admin/doi/{{ h.doi.ma_doi }}">Xem</a></td>
+        <td class="o-nut">
+          {% if not h.lan_nop %}
+            <button type="button" disabled title="Đội chưa có lần nộp thành công">Chấm</button>
+          {% elif h.trang_thai in ["cho_cham", "dang_cham"] %}
+            <button type="button" disabled>Đang chấm…</button>
+          {% else %}
+            <form method="post" action="/admin/cham-lai/{{ h.lan_nop.id }}">
+              <input type="hidden" name="quay_ve" value="tong_quan">
+              {% if h.trang_thai == "chua_cham" %}<button type="submit">Chấm</button>
+              {% else %}<button type="submit" class="phu-nut">Chấm lại</button>{% endif %}
+            </form>
+          {% endif %}
+        </td>
       </tr>
     {% else %}
       <tr><td colspan="9" class="phu">Chưa có đội nào. Đội được tạo tự động khi nộp bài lần đầu, hoặc thêm trước ở bên dưới.</td></tr>
@@ -72,4 +89,21 @@
     </form>
   </section>
 </div>
+
+<script>
+  // Khi đang chấm: khóa nút để không bấm lặp
+  document.querySelectorAll("form[action^='/admin/cham']").forEach(function (f) {
+    f.addEventListener("submit", function (e) {
+      if (e.defaultPrevented) return;  // admin bấm Hủy ở hộp xác nhận
+      var nut = f.querySelector("button[type=submit]");
+      setTimeout(function () { nut.disabled = true; nut.textContent = "Đang chấm…"; }, 0);
+    });
+  });
+  // Bấm vào dòng (trừ nút/link) để mở trang chi tiết đội
+  document.querySelectorAll("tr.hang-bam").forEach(function (tr) {
+    tr.addEventListener("click", function (e) {
+      if (!e.target.closest("a, button, form")) window.location = tr.dataset.href;
+    });
+  });
+</script>
 {% endblock %}

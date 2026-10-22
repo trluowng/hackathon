@@ -32,7 +32,8 @@ from doc_phieu_word import LoiDocPhieu, doc_phieu
 from kiem_tra_tinh import CANH_BAO, LOI
 from nap_ma_nguon import LoiNapFile, nap
 from phan_tach import tach_chuong_trinh, vung_code
-from thay_du_lieu import _tuple_hoa, node_du_lieu, thay_du_lieu, tim_du_lieu
+from thay_du_lieu import _tuple_hoa, cac_literal, node_du_lieu, thay_du_lieu, tim_du_lieu
+from thay_du_lieu import co_du_lieu as co_du_lieu_phan
 
 MAU_TEN = re.compile(r"^(?P<doi>.+?)_(?P<tv>[ABC])_Bai(?P<bai>[1-5])\.(?P<duoi>py|ipynb)$", re.I)
 CAC_PHAN = [(bai, tv) for bai in range(1, 6) for tv in "ABC"]
@@ -55,7 +56,8 @@ NHOM_LOI = {
     "duyet_khong_dat": "Người chấm duyệt: không đạt",
 }
 
-THOI_GIAN_TOI_DA = 10  # giây cho mỗi lần chạy
+# Giây cho mỗi lần chạy code. Trên Vercel mỗi request tối đa 300 giây nên mặc định ngắn hơn.
+THOI_GIAN_TOI_DA = int(os.environ.get("CHAM_THOI_GIAN") or (5 if os.environ.get("VERCEL") else 10))
 
 
 def _chuan_so(s):
@@ -289,11 +291,11 @@ def tim_bo_cuc(thu_muc):
     co_du_lieu = {}
     for duong_dan in cac_file:
         try:
-            cay = ast.parse(nap(duong_dan).ma_nguon)
+            literal = cac_literal(ast.parse(nap(duong_dan).ma_nguon))  # duyệt code một lần cho cả 15 phần
         except (LoiNapFile, SyntaxError):
             continue
         for p in CAC_PHAN:
-            if tim_du_lieu(cay, DE_THI[p[0]][p[1]].dau_vao):
+            if co_du_lieu_phan(literal, DE_THI[p[0]][p[1]].dau_vao):
                 co_du_lieu.setdefault(p, []).append(duong_dan)
 
     goi_y = {f: _goi_y_tu_ten(os.path.basename(f)) for f in cac_file}

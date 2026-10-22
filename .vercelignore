@@ -1,0 +1,6 @@
+# Không đưa lên Vercel: dữ liệu chạy thử, tài liệu, bài giải mẫu
+web/du_lieu/
+data/
+bai_giai_mau/
+cham_diem/vi_du/
+**/__pycache__/

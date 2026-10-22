@@ -5,79 +5,108 @@
 {% block noi_dung %}
 <p><a href="/admin">← Tổng quan</a></p>
 
+{% set so_loi = lich_su | selectattr("loi_nop") | list | length %}
 <section class="the">
   <div class="dau-the">
     <div>
       <h1>Đội {{ ma_doi }}</h1>
       <p class="phu">{{ thong_tin_doi.ten_doi if thong_tin_doi else "(đội đã bị xóa)" }}</p>
+      <p>Số lần nộp: <strong>{{ lich_su | length }}</strong>
+        ({{ lich_su | length - so_loi }} thành công{% if so_loi %}, <span class="sai-chu">{{ so_loi }} lỗi</span>{% endif %})
+        {% if lan_hop_le %}· chấm lần <strong>{{ lan_hop_le.so }}</strong> (lần nộp thành công cuối cùng){% endif %}</p>
     </div>
-    {% if bc %}<div class="diem-lon">{{ bc.tong_diem }}<span>/25</span></div>{% endif %}
-  </div>
-
-  {% if not lan_nop %}
-    <p class="phu">Đội chưa nộp bài.</p>
-  {% else %}
-    <div class="hang-ngang">
-      <div>
-        Lần nộp <strong>#{{ lan_nop.id }}</strong> · {{ lan_nop.thoi_gian | tg }}
-        {% if not la_moi_nhat %}<span class="nhan nhan-xam">bản cũ</span>{% endif %}
-        {% if lan_nop.loi_nop %}
-          · <span class="nhan nhan-do">Nộp lỗi · không chấm điểm</span>
-        {% else %}
-          · {{ trang_thai_cham(kq.trang_thai if kq else "chua_cham") }}
-          {% if kq %}<span class="phu">cập nhật {{ kq.cap_nhat | tg }}</span>{% endif %}
-          {% if lan_hop_le and lan_hop_le.id == lan_nop.id %}<span class="nhan nhan-lam">bản đang tính điểm</span>{% endif %}
-        {% endif %}
-      </div>
-      {% if not lan_nop.loi_nop %}
-        <form method="post" action="/admin/cham-lai/{{ lan_nop.id }}">
-          {% if kq %}<button type="submit" class="phu-nut">Chấm lại</button>
-          {% else %}<button type="submit">Chấm bài này</button>{% endif %}
+    <div class="nut-nhom">
+      {% if bc and lan_hop_le and lan_nop.id == lan_hop_le.id %}<div class="diem-lon">{{ bc.tong_diem }}<span>/25</span></div>{% endif %}
+      {% if lan_hop_le %}
+        <form method="post" action="/admin/cham-lai/{{ lan_hop_le.id }}">
+          {% if cac_lan | selectattr("la_ban_cham") | map(attribute="trang_thai_cham") | select("in", ["cho_cham", "dang_cham"]) | list %}
+            <button type="button" disabled>Đang chấm…</button>
+          {% elif cac_lan | selectattr("la_ban_cham") | map(attribute="trang_thai_cham") | select("equalto", "chua_cham") | list %}
+            <button type="submit">Chấm</button>
+          {% else %}<button type="submit" class="phu-nut">Chấm lại</button>{% endif %}
         </form>
       {% endif %}
     </div>
-    {% if lich_su | length > 1 %}
-      <p class="phu">Các lần nộp:
-        {% for ln in lich_su %}<a href="/admin/doi/{{ ma_doi }}?lan={{ ln.id }}" class="chip {% if ln.id == lan_nop.id %}chip-chon{% elif ln.loi_nop %}chip-do{% endif %}">#{{ ln.id }} {{ ln.thoi_gian | tg }}{% if ln.loi_nop %} · lỗi{% endif %}</a>{% endfor %}
-      </p>
-    {% endif %}
-    {% if lan_nop.loi_nop %}
-      <div class="tb tb-loi">
-        <strong>Lần nộp này bị từ chối, không chấm điểm.</strong> Đội đã được báo nộp lỗi để nộp lại. Lý do:
-        <ul>{% for x in lan_nop.loi_nop %}<li>{{ x }}</li>{% endfor %}</ul>
-        {% if lan_hop_le %}Điểm của đội đang tính theo lần nộp hợp lệ gần nhất:
-          <a href="/admin/doi/{{ ma_doi }}?lan={{ lan_hop_le.id }}">#{{ lan_hop_le.id }} lúc {{ lan_hop_le.thoi_gian | tg }}</a>.
-        {% else %}Đội chưa có lần nộp hợp lệ nào nên chưa có điểm.{% endif %}
-      </div>
-    {% endif %}
-    <p>File:
-      {% for f in lan_nop.cac_file %}<a class="chip" href="/admin/file/{{ lan_nop.id }}/{{ f }}">{{ f }}</a>{% endfor %}
-    </p>
-    {% set kt = lan_nop.kiem_tra %}
-    {% if kt and kt.cac_file is defined %}
-    {% set kt_van_de = kt.thieu or kt.o_trong or kt.phieu.van_de or (kt.cac_file | selectattr("van_de") | list) %}
-    <details {% if kt_van_de %}open{% endif %}>
-      <summary>Kiểm tra định dạng lúc nộp
-        {% if kt_van_de %}<span class="nhan nhan-vang">có vấn đề - đội đã được báo</span>
-        {% else %}<span class="nhan nhan-xanh">hợp lệ</span>{% endif %}</summary>
-      <table class="bang nho">
-        <thead><tr><th>Ô</th><th>File</th><th>Nhận ra</th><th>Vấn đề</th></tr></thead>
-        <tbody>
-          <tr><td>Phiếu</td><td><code>{{ kt.phieu.ten or "—" }}</code></td><td></td>
-              <td>{% for v in kt.phieu.van_de %}<div class="sai-chu">{{ v }}</div>{% else %}<span class="ok">✓</span>{% endfor %}</td></tr>
-          {% for f in kt.cac_file %}
-          <tr><td>{{ "Bài %d" % f.o if f.o else "—" }}</td><td><code>{{ f.ten }}</code></td>
-              <td>{% for p in f.phan %}<span class="chip">{{ p }}</span>{% endfor %}</td>
-              <td>{% for v in f.van_de %}<div class="sai-chu">{{ v }}</div>{% else %}<span class="ok">✓</span>{% endfor %}</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-      {% if kt.thieu %}<p class="canh">Thiếu phần: {{ kt.thieu | join(", ") }}</p>{% endif %}
-    </details>
-    {% endif %}
-    {% if kq and kq.trang_thai == "loi" %}<pre class="ma">{{ kq.loi }}</pre>{% endif %}
+  </div>
+
+  {% if not lich_su %}
+    <p class="phu">Đội chưa nộp bài.</p>
+  {% else %}
+  <h2>Lịch sử nộp bài</h2>
+  <table class="bang">
+    <thead><tr><th>Lần</th><th>Thời gian</th><th>Trạng thái nộp</th><th>Chấm điểm</th><th class="so">Điểm</th><th></th></tr></thead>
+    <tbody>
+    {% for d in cac_lan %}
+      <tr class="hang-bam {% if lan_nop and d.ln.id == lan_nop.id %}dang-xem{% endif %}" data-href="/admin/doi/{{ ma_doi }}?lan={{ d.ln.id }}">
+        <td><strong>{{ d.ln.so }}</strong></td>
+        <td>{{ d.ln.thoi_gian | tg }}</td>
+        <td>
+          {% if d.ln.loi_nop %}
+            <span class="nhan nhan-do">Nộp lỗi</span>
+            <div class="phu">{{ d.ln.loi_nop | join(" ") }}</div>
+          {% else %}<span class="nhan nhan-xanh">Nộp thành công</span>{% endif %}
+        </td>
+        <td>
+          {% if d.ln.loi_nop %}<span class="phu">Không chấm</span>
+          {% elif d.la_ban_cham %}{{ trang_thai_cham(d.trang_thai_cham) }} <span class="nhan nhan-lam">bản được chấm</span>
+          {% elif d.trang_thai_cham == "da_cham" %}<span class="phu">Bản cũ (đã chấm trước đó)</span>
+          {% else %}<span class="phu">Bản cũ - không chấm</span>{% endif %}
+        </td>
+        <td class="so">{% if d.diem is not none %}<strong>{{ d.diem }}</strong>/25{% else %}—{% endif %}</td>
+        <td><a href="/admin/doi/{{ ma_doi }}?lan={{ d.ln.id }}">Xem</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
   {% endif %}
 </section>
+
+{% if lan_nop %}
+<section class="the">
+  <h2>Lần nộp thứ {{ lan_nop.so }} · {{ lan_nop.thoi_gian | tg }}
+    {% if lan_nop.loi_nop %}<span class="nhan nhan-do">Nộp lỗi · không chấm</span>
+    {% elif lan_hop_le and lan_nop.id == lan_hop_le.id %}{{ trang_thai_cham(kq.trang_thai if kq else "chua_cham") }}
+    {% else %}<span class="nhan nhan-xam">bản cũ - không chấm</span>{% endif %}
+  </h2>
+  {% if lan_nop.loi_nop %}
+    <div class="tb tb-loi">
+      <strong>Lần nộp bị từ chối, không chấm điểm.</strong> Lý do:
+      <ul>{% for x in lan_nop.loi_nop %}<li>{{ x }}</li>{% endfor %}</ul>
+      {% if lan_hop_le %}Điểm của đội tính theo lần nộp thành công cuối cùng:
+        <a href="/admin/doi/{{ ma_doi }}?lan={{ lan_hop_le.id }}">lần thứ {{ lan_hop_le.so }} lúc {{ lan_hop_le.thoi_gian | tg }}</a>.
+      {% else %}Đội chưa có lần nộp thành công nào nên chưa có điểm.{% endif %}
+    </div>
+  {% endif %}
+  <p>File:
+    {% for f in lan_nop.cac_file %}<a class="chip" href="/admin/file/{{ lan_nop.id }}/{{ f }}">{{ f }}</a>{% endfor %}
+  </p>
+  {% set kt = lan_nop.kiem_tra %}
+  {% if kt and kt.cac_file is defined %}
+  {% set kt_van_de = kt.thieu or kt.o_trong or kt.phieu.van_de or (kt.cac_file | selectattr("van_de") | list) %}
+  <details {% if kt_van_de %}open{% endif %}>
+    <summary>Kiểm tra định dạng lúc nộp (chỉ admin thấy)
+      {% if kt_van_de %}<span class="nhan nhan-vang">có vấn đề</span>
+      {% else %}<span class="nhan nhan-xanh">hợp lệ</span>{% endif %}</summary>
+    <table class="bang nho">
+      <thead><tr><th>Ô</th><th>File</th><th>Nhận ra</th><th>Vấn đề</th></tr></thead>
+      <tbody>
+        <tr><td>Phiếu</td><td><code>{{ kt.phieu.ten or "—" }}</code></td>
+            <td>{{ kt.phieu.ma_doi }} · {{ kt.phieu.ten_doi }}</td>
+            <td>{% for v in kt.phieu.van_de %}<div class="sai-chu">{{ v }}</div>{% else %}<span class="ok">✓</span>{% endfor %}</td></tr>
+        {% for f in kt.cac_file %}
+        <tr><td>{{ "Bài %d" % f.o if f.o else "—" }}</td><td><code>{{ f.ten }}</code></td>
+            <td>{% for p in f.phan %}<span class="chip">{{ p }}</span>{% endfor %}</td>
+            <td>{% for v in f.van_de %}<div class="sai-chu">{{ v }}</div>{% else %}<span class="ok">✓</span>{% endfor %}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if kt.o_trong %}<p class="canh">Ô để trống: {% for so in kt.o_trong %}Bài {{ so }} {% endfor %}</p>{% endif %}
+    {% if kt.thieu %}<p class="canh">Thiếu phần: {{ kt.thieu | join(", ") }}</p>{% endif %}
+  </details>
+  {% endif %}
+  {% if kq and kq.trang_thai == "loi" %}<pre class="ma">{{ kq.loi }}</pre>{% endif %}
+</section>
+{% endif %}
 
 {% if bc %}
 <section class="the">
@@ -187,9 +216,17 @@
 {% if thong_tin_doi %}
 <section class="the vung-nguy-hiem">
   <h2>Xóa đội</h2>
-  <form method="post" action="/admin/doi/{{ ma_doi }}/xoa" onsubmit="return confirm('Xóa đội {{ ma_doi }}? Đội sẽ không đăng nhập được nữa.')">
+  <form method="post" action="/admin/doi/{{ ma_doi }}/xoa" onsubmit="return confirm('Xóa đội {{ ma_doi }} khỏi danh sách? Bài đã nộp vẫn được giữ.')">
     <button type="submit" class="nut-do">Xóa đội {{ ma_doi }}</button>
   </form>
 </section>
 {% endif %}
+<script>
+  // Bấm vào dòng lịch sử (trừ nút/link) để xem lần nộp đó
+  document.querySelectorAll("tr.hang-bam").forEach(function (tr) {
+    tr.addEventListener("click", function (e) {
+      if (!e.target.closest("a, button, form")) window.location = tr.dataset.href;
+    });
+  });
+</script>
 {% endblock %}

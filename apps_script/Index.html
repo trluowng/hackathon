@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <style>
+    :root { --nen: #f4f6f9; --the: #fff; --chu: #1f2a37; --phu: #64748b; --vien: #dde3ea; --chinh: #1b3a5c;
+            --chinh-sang: #2b5a8a; --xanh: #15803d; --xanh-nen: #dcfce7; --do: #b91c1c; --do-nen: #fee2e2; --xam-nen: #eef1f5; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--nen); color: var(--chu); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    header { background: var(--chinh); color: #fff; padding: 14px 16px; font-weight: 700; }
+    header span { font-weight: 400; opacity: .75; margin-left: 8px; font-size: .9em; }
+    main { max-width: 980px; margin: 0 auto; padding: 20px 16px 48px; }
+    .the { background: var(--the); border: 1px solid var(--vien); border-radius: 10px; padding: 20px; }
+    h1 { font-size: 1.45rem; margin: 0 0 .25rem; }
+    .phu { color: var(--phu); }
+    .dau { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; }
+    .nhan { display: inline-block; padding: 1px 10px; border-radius: 999px; font-size: .82rem; font-weight: 600; }
+    .nhan-xanh { background: var(--xanh-nen); color: var(--xanh); } .nhan-do { background: var(--do-nen); color: var(--do); }
+    .huong-dan { background: var(--xam-nen); border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; }
+    .huong-dan ul { margin: 6px 0 8px; padding-left: 20px; }
+    code { font-family: ui-monospace, Consolas, monospace; background: var(--xam-nen); padding: 1px 4px; border-radius: 4px; }
+    fieldset { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 14px; }
+    .luoi-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+    label { display: flex; flex-direction: column; gap: 4px; font-weight: 600; }
+    input { font: inherit; padding: 8px 10px; border: 1px solid var(--vien); border-radius: 6px; width: 100%; }
+    .cac-o { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+    .o { border: 1px dashed var(--vien); border-radius: 8px; padding: 12px; background: #fbfcfd; }
+    .o.phieu { border-color: var(--chinh-sang); background: #f5f9ff; }
+    .o.co-loi { border-color: var(--do); background: #fff7f7; }
+    .loi-file { color: var(--do); font-size: .88rem; } .loi-file:empty { display: none; }
+    button { font: inherit; font-weight: 600; background: var(--chinh); color: #fff; border: 0; border-radius: 6px; padding: 9px 20px; cursor: pointer; }
+    button:disabled { background: #94a3b8; cursor: not-allowed; }
+    .tb { padding: 10px 14px; border-radius: 8px; margin-bottom: 16px; border: 1px solid; }
+    .tb-ok { background: var(--xanh-nen); border-color: #86efac; color: #14532d; }
+    .tb-loi { background: var(--do-nen); border-color: #fca5a5; color: #7f1d1d; }
+    .tb ul { margin: 6px 0; padding-left: 20px; }
+  </style>
+</head>
+<body>
+<header>Olympic AI UNETI 2026 <span>Vòng 1 · UNETI 70: Giải mã hành trình</span></header>
+<main>
+  <div id="thong-bao"></div>
+  <section class="the">
+    <div class="dau">
+      <div>
+        <h1>Nộp bài Vòng 1</h1>
+        <div class="phu">Không cần đăng nhập. Nhập đúng mã đội Ban Tổ chức cấp.</div>
+      </div>
+      <div id="trang-thai" style="text-align:right"></div>
+    </div>
+
+    <div class="huong-dan">
+      <ul>
+        <li><strong>Mã đội và Tên đội</strong> nhập ở đây phải <strong>giống hệt</strong> ô Mã đội, Tên đội trong phiếu trả lời; khác nhau thì bài không được nhận.</li>
+        <li><strong>Phiếu trả lời</strong>: file Word <code>.docx</code> điền đúng mẫu, mỗi ô chỉ ghi một số hoặc một chữ cái.</li>
+        <li><strong>Bài 1 → Bài 5</strong>: mỗi ô một file <code>.py</code> hoặc <code>.ipynb</code>, gộp phần của thành viên A, B, C của bài đó.</li>
+        <li>Dữ liệu đề cho viết sẵn trong code, không dùng <code>input()</code> hay đọc file. Mỗi file tối đa 2 MB.</li>
+      </ul>
+      Hệ thống kiểm tra mã đội và tên đội: <strong>đúng và đủ thì nộp thành công</strong>, sai thì báo lỗi để đội nộp lại.
+      Ban Tổ chức chỉ chấm <strong>lần nộp thành công cuối cùng</strong>, nên mỗi lần nộp hãy chọn lại đủ các file.
+    </div>
+
+    <form id="form-nop">
+      <fieldset id="vung-nhap">
+        <div class="luoi-2">
+          <label>Mã đội <input id="ma-doi" required maxlength="30" pattern="[A-Za-z0-9_\-]+" placeholder="VD: D01"></label>
+          <label>Tên đội <input id="ten-doi" required maxlength="100"></label>
+        </div>
+        <div class="cac-o" id="cac-o"></div>
+        <div><button type="submit" id="nut-nop">Nộp bài</button></div>
+      </fieldset>
+    </form>
+  </section>
+</main>
+
+<script>
+  var TRANG_THAI = <?!= JSON.stringify(trangThai) ?>;
+  var TOI_DA = 2 * 1024 * 1024;
+  var TEN_BAI = {1: "Dấu mốc 70 năm", 2: "Những con số dấu ấn", 3: "Nhịp sống UNETI", 4: "Kết nối những chặng đường", 5: "UNETI vươn xa"};
+  var CAC_O = [{o: "phieu", nhan: "Phiếu trả lời", duoi: [".docx"]}];
+  for (var i = 1; i <= 5; i++) CAC_O.push({o: i, nhan: "Bài " + i + ". " + TEN_BAI[i], duoi: [".py", ".ipynb"]});
+
+  function $(id) { return document.getElementById(id); }
+  function hienThoiGian(s) {
+    if (!s) return "";
+    var d = s.split("T"), n = d[0].split("-");
+    return d[1] + " " + n[2] + "/" + n[1] + "/" + n[0];
+  }
+  function baoCao(loai, html) { $("thong-bao").innerHTML = '<div class="tb tb-' + loai + '">' + html + "</div>"; window.scrollTo(0, 0); }
+  function thoat(s) { var d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
+
+  // Trạng thái nộp
+  $("trang-thai").innerHTML = (TRANG_THAI.han ? "Hạn nộp: <strong>" + hienThoiGian(TRANG_THAI.han) + "</strong><br>" : "Chưa đặt hạn nộp<br>") +
+    (TRANG_THAI.duoc ? '<span class="nhan nhan-xanh">Đang mở nộp</span>' : '<span class="nhan nhan-do">' + thoat(TRANG_THAI.ly_do) + "</span>");
+  $("vung-nhap").disabled = !TRANG_THAI.duoc;
+
+  // 6 ô nộp
+  CAC_O.forEach(function (c) {
+    var div = document.createElement("div");
+    div.className = "o" + (c.o === "phieu" ? " phieu" : "");
+    div.innerHTML = '<label>' + c.nhan + ' <span class="phu">· ' + c.duoi.join(" / ") + '</span>' +
+      '<input type="file" id="o-' + c.o + '" accept="' + c.duoi.join(",") + '"' + (c.o === "phieu" ? " required" : "") + '></label>' +
+      '<div class="loi-file"></div>';
+    $("cac-o").appendChild(div);
+    var input = div.querySelector("input");
+    input.addEventListener("change", function () {
+      var f = input.files[0], loi = div.querySelector(".loi-file");
+      loi.textContent = ""; div.classList.remove("co-loi");
+      if (!f) return;
+      if (!c.duoi.some(function (d) { return f.name.toLowerCase().slice(-d.length) === d; })) {
+        loi.textContent = "Ô này chỉ nhận file " + c.duoi.join(" hoặc ") + " (đã chọn: " + f.name + ")";
+      } else if (f.size > TOI_DA) {
+        loi.textContent = "File quá 2 MB.";
+      } else { return; }
+      input.value = ""; div.classList.add("co-loi");
+    });
+  });
+
+  function docBase64(file) {
+    return new Promise(function (ok, loi) {
+      var r = new FileReader();
+      r.onload = function () { ok(String(r.result).split(",")[1] || ""); };
+      r.onerror = loi;
+      r.readAsDataURL(file);
+    });
+  }
+
+  $("form-nop").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var chon = CAC_O.map(function (c) { return {o: c.o, f: $("o-" + c.o).files[0]}; }).filter(function (x) { return x.f; });
+    if (!chon.some(function (x) { return x.o !== "phieu"; })) { alert("Chưa chọn file bài làm nào."); return; }
+    var nut = $("nut-nop");
+    nut.disabled = true; nut.textContent = "Đang nộp…";
+    Promise.all(chon.map(function (x) { return docBase64(x.f).then(function (b64) { return {o: x.o, ten: x.f.name, b64: b64}; }); }))
+      .then(function (tep) {
+        google.script.run
+          .withSuccessHandler(function (kq) {
+            nut.disabled = false; nut.textContent = "Nộp bài";
+            if (kq.ok) {
+              baoCao("ok", "<strong>Nộp thành công.</strong> Đã nhận bài của đội " + thoat(kq.ma_doi) + " – " + thoat(kq.ten_doi) +
+                " lúc " + hienThoiGian(kq.thoi_gian) + ". Nếu cần sửa, cứ nộp lại trước hạn - Ban Tổ chức chấm lần nộp thành công cuối cùng.");
+              $("form-nop").querySelectorAll("input[type=file]").forEach(function (i) { i.value = ""; });
+            } else {
+              baoCao("loi", "<strong>NỘP LỖI - bài chưa được nhận.</strong> Vui lòng sửa rồi nộp lại:<ul>" +
+                kq.loi.map(function (x) { return "<li>" + thoat(x) + "</li>"; }).join("") + "</ul>");
+            }
+          })
+          .withFailureHandler(function (err) {
+            nut.disabled = false; nut.textContent = "Nộp bài";
+            baoCao("loi", "<strong>Hệ thống đang bận, bài chưa được nhận.</strong> Vui lòng đợi vài giây rồi bấm Nộp lại. (" + thoat(String(err && err.message || err)) + ")");
+          })
+          .nopBai({ma_doi: $("ma-doi").value, ten_doi: $("ten-doi").value, tep: tep});
+      });
+  });
+</script>
+</body>
+</html>

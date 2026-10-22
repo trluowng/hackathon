@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ ten }} · Admin{% endblock %}
 {% block noi_dung %}
-<p><a href="/admin/doi/{{ lan_nop.ma_doi }}?lan={{ lan_nop.id }}">← Đội {{ lan_nop.ma_doi }}, lần nộp #{{ lan_nop.id }}</a></p>
+<p><a href="/admin/doi/{{ lan_nop.ma_doi }}?lan={{ lan_nop.id }}">← Đội {{ lan_nop.ma_doi }}, lần nộp thứ {{ lan_nop.so }}</a></p>
 <section class="the">
   <h1><code>{{ ten }}</code></h1>
   {% if loi %}<p class="canh">{{ loi }}</p>{% endif %}

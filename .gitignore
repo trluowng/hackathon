@@ -1,0 +1,9 @@
+# Dữ liệu chạy web trên máy (SQLite chứa khóa phiên, bài nộp) - không đưa lên Git
+web/du_lieu/
+__pycache__/
+*.pyc
+# File khóa tạm của Word/Excel
+~$*
+# Biến môi trường bí mật khi chạy thử trên máy
+.env
+.vercel

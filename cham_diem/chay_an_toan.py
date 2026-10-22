@@ -117,6 +117,8 @@ with open(file_ra, "w", encoding="utf-8") as f:
 # làm code đúng bị "quá thời gian". Thời gian chỉ tính từ lúc thật sự được chạy.
 SO_TIEN_TRINH_TOI_DA = int(os.environ.get("CHAM_SONG_SONG") or max(2, (os.cpu_count() or 2) // 2))
 _luot_chay = threading.BoundedSemaphore(SO_TIEN_TRINH_TOI_DA)
+# Hết giờ thì chạy lại một lần (máy quá tải); tắt trên Vercel để một đội chấm xong trong giới hạn 300 giây.
+THU_LAI_KHI_HET_GIO = os.environ.get("CHAM_THU_LAI", "0" if os.environ.get("VERCEL") else "1") == "1"
 
 
 @dataclass
@@ -132,12 +134,14 @@ def _giai_ma(b):
     return b.decode("utf-8", errors="replace") if b else ""
 
 
-def chay(ma_nguon, la_notebook=False, ten_bien=(), thoi_gian=10, thu_lai_khi_het_gio=True):
+def chay(ma_nguon, la_notebook=False, ten_bien=(), thoi_gian=10, thu_lai_khi_het_gio=None):
     """Chạy code, trả về stdout, lỗi (nếu có) và repr các biến cần lấy sau khi chạy.
 
     Hết giờ thì chạy lại một lần với thời gian gấp đôi trước khi kết luận (tránh trừ oan khi máy
     đang quá tải); code lặp vô hạn thật vẫn bị bắt.
     """
+    if thu_lai_khi_het_gio is None:
+        thu_lai_khi_het_gio = THU_LAI_KHI_HET_GIO
     with _luot_chay:
         kq = _chay_mot_lan(ma_nguon, la_notebook, ten_bien, thoi_gian)
     if kq.het_gio and thu_lai_khi_het_gio:
@@ -157,7 +161,10 @@ def _chay_mot_lan(ma_nguon, la_notebook, ten_bien, thoi_gian):
         with open(file_harness, "w", encoding="utf-8") as f:
             f.write(_HARNESS)
 
-        env = {"SYSTEMROOT": os.environ.get("SYSTEMROOT", ""), "TEMP": tmp, "TMP": tmp, "HOME": tmp}
+        # Chỉ giữ biến môi trường cần để Python khởi động được (Windows cần SYSTEMROOT; Linux/Vercel có thể
+        # cần PATH, LD_LIBRARY_PATH), không lộ các biến bí mật (khóa Google...) cho code thí sinh.
+        env = {k: os.environ[k] for k in ("SYSTEMROOT", "PATH", "LD_LIBRARY_PATH", "LANG") if k in os.environ}
+        env.update(TEMP=tmp, TMP=tmp, HOME=tmp)
         lenh = [sys.executable, "-I", "-X", "utf8", file_harness, file_bai, file_ra,
                 ",".join(ten_bien), "1" if la_notebook else "0"]
         try:

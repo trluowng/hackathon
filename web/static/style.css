@@ -129,6 +129,13 @@ pre.co-so-dong .so-dong { display: inline-block; width: 3em; color: #64748b; use
 .o-md { color: var(--phu); border-left: 3px solid var(--vien); padding: 4px 12px; margin: 8px 0; white-space: pre-wrap; }
 .vung-nguy-hiem { border-color: #fca5a5; }
 
+tr.hang-bam { cursor: pointer; }
+tr.hang-bam:hover td { background: #f5f9ff; }
+td.o-nut { text-align: right; white-space: nowrap; }
+td.o-nut form { margin: 0; display: inline; }
+td.o-nut button { padding: 5px 14px; font-size: .9rem; }
+tr.dang-xem td { background: #eef5ff; }
+
 fieldset { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 .cac-o-nop { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
 .o-nop { border: 1px dashed var(--vien); border-radius: 8px; padding: 12px; display: flex; flex-direction: column;

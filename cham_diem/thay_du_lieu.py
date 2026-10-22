@@ -303,6 +303,31 @@ def node_du_lieu(cay, dau_vao):
     return ket_qua
 
 
+def cac_literal(cay):
+    """Mọi literal trong code (trừ trong f-string) kèm giá trị - tính một lần để dò nhiều phần."""
+    ket_qua = []
+
+    def di(node):
+        if isinstance(node, ast.JoinedStr):
+            return
+        if isinstance(node, _LITERAL):
+            try:
+                ket_qua.append((node, ast.literal_eval(node)))
+            except Exception:
+                pass
+        for con in ast.iter_child_nodes(node):
+            di(con)
+
+    di(cay)
+    return ket_qua, _so_trong_day(cay)
+
+
+def co_du_lieu(literal, dau_vao):
+    """Code (đã tính sẵn bằng cac_literal) có chứa dữ liệu đề cho của phần này không."""
+    cac_lit, trong_day = literal
+    return any(_khop(kieu, v, node, trong_day) for node, v in cac_lit for kieu in dau_vao.values())
+
+
 def tim_du_lieu(cay, dau_vao):
     """Tên các dữ liệu đầu vào của đề tìm thấy trong code."""
     t = _ThayThe(dau_vao, None, _so_trong_day(cay))
