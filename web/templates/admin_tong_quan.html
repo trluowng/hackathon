@@ -17,7 +17,9 @@
       <a class="nut phu-nut" href="/admin/xep-hang">Bảng xếp hạng</a>
     </div>
   </div>
-  <p class="phu">Link gửi các đội để nộp bài: <a href="{{ link_nop_bai }}" target="_blank">{{ link_nop_bai }}</a></p>
+  <p class="phu">Link gửi các đội để nộp bài: <a href="{{ link_nop_bai }}" target="_blank">{{ link_nop_bai }}</a>
+    {% if lien_ket.thong_ke %} · <a href="{{ lien_ket.thong_ke }}" target="_blank">File thống kê nộp bài</a>{% endif %}
+    {% if lien_ket.thu_muc %} · <a href="{{ lien_ket.thu_muc }}" target="_blank">Thư mục bài nộp (Drive)</a>{% endif %}</p>
   <p class="phu">Mỗi đội chỉ chấm <strong>lần nộp thành công cuối cùng</strong>. Bấm vào một đội để xem các lần nộp và
     trạng thái từng lần; bấm <strong>Chấm</strong> ở cuối dòng để chấm riêng đội đó.</p>
   {% if cham_dong_bo %}

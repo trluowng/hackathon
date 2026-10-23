@@ -44,7 +44,8 @@
           {% if d.ln.loi_nop %}
             <span class="nhan nhan-do">Nộp lỗi</span>
             <div class="phu">{{ d.ln.loi_nop | join(" ") }}</div>
-          {% else %}<span class="nhan nhan-xanh">Nộp thành công</span>{% endif %}
+          {% else %}<span class="nhan nhan-xanh">Nộp thành công</span>
+            {% if d.ln.thay_the %}<div class="phu">file đã bị bản nộp sau đè lên</div>{% endif %}{% endif %}
         </td>
         <td>
           {% if d.ln.loi_nop %}<span class="phu">Không chấm</span>

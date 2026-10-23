@@ -51,7 +51,17 @@ def cham_ngay(lan_nop_id):
         bao_cao["phieu_nguon"] = os.path.basename(duong_dan_phieu) if duong_dan_phieu else None
         kho.dat_ket_qua(lan_nop_id, "da_cham", bao_cao=bao_cao, phieu=phieu or {})
     except Exception:
-        kho.dat_ket_qua(lan_nop_id, "loi", loi=traceback.format_exc())
+        _ghi_loi(lan_nop_id)
+
+
+def _ghi_loi(lan_nop_id):
+    """Ghi lỗi chấm; nếu ghi cũng lỗi (vd. bài vừa bị bản nộp mới đè) thì chỉ in ra, không làm dừng việc chấm đội khác."""
+    loi = traceback.format_exc()
+    try:
+        kho.dat_ket_qua(lan_nop_id, "loi", loi=loi)
+    except Exception:
+        print(loi)
+        traceback.print_exc()
 
 
 def _lam_viec():
@@ -68,7 +78,7 @@ def _lam_viec():
                 kho.dat_ket_qua(lan_nop_id, "bo_qua", loi="Đã có lần nộp mới hơn")
                 continue
         except Exception:
-            kho.dat_ket_qua(lan_nop_id, "loi", loi=traceback.format_exc())
+            _ghi_loi(lan_nop_id)
             continue
         cham_ngay(lan_nop_id)
 

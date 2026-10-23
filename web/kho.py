@@ -22,3 +22,5 @@ globals().update({k: v for k, v in vars(_ban).items() if not k.startswith("_")})
 NOP_BAI_NGOAI = getattr(_ban, "NOP_BAI_NGOAI", "")
 # Lưu kết quả kiểm tra định dạng tính lúc chấm; các bản khác đã lưu lúc nộp nên bỏ qua
 luu_kiem_tra = getattr(_ban, "luu_kiem_tra", lambda lan_nop_id, kiem_tra: None)
+# Link thư mục bài nộp / file thống kê (chỉ bản Apps Script có)
+lien_ket = getattr(_ban, "lien_ket", lambda: {})

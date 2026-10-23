@@ -31,19 +31,31 @@ Cần chuẩn bị: 1 tài khoản **Gmail** (chứa bài nộp), 1 tài khoản
    - Hiện *Authorization required* → **Review permissions** → chọn Gmail của bạn.
    - Hiện *"Google hasn't verified this app"* → **Advanced** → **Go to Olympic AI - Nộp bài (unsafe)** → **Allow**
      (đây là script của chính bạn).
-   - Ô **Execution log** bên dưới hiện 2 dòng:
+   - Ô **Execution log** bên dưới hiện 3 dòng:
      ```
      Thư mục lưu bài: https://drive.google.com/drive/folders/...
+     File thống kê: https://docs.google.com/spreadsheets/d/...
      APPS_SCRIPT_KHOA (dán vào Vercel): 3f9a...
      ```
      → **chép khóa** (dãy ký tự sau dấu `:`) ra Notepad.
-   - Mở Google Drive sẽ thấy thư mục **OlympicAI_Vong1** (bên trong có `bai_nop`). **Đừng xóa / đổi tên.**
+   - Mở Google Drive sẽ thấy thư mục **OlympicAI_Vong1**, bên trong có thư mục `bai_nop` và file Google Sheet
+     **Thong_ke_nop_bai_Vong1** (file thống kê, xem mục *Nộp lại và file thống kê* bên dưới). **Đừng xóa / đổi tên.**
 6. **Deploy**: góc trên phải bấm **Deploy** → **New deployment** → bấm bánh răng cạnh *Select type* → **Web app**:
    - *Description*: `v1`
    - *Execute as*: **Me** (Gmail của bạn)
    - *Who has access*: **Anyone** (Bất kỳ ai)
    - → **Deploy** → chép **Web app URL** (dạng `https://script.google.com/macros/s/.../exec`) ra Notepad.
 7. Mở link đó bằng **cửa sổ ẩn danh** (không đăng nhập) → phải thấy trang **Nộp bài Vòng 1**.
+
+### Nộp lại và file thống kê
+
+- Mỗi đội có **một thư mục** `bai_nop/<MÃ_ĐỘI>`. Đội nộp lại thành công thì **bài mới đè bài cũ**: file cũ bị chuyển
+  vào Thùng rác, thư mục chỉ còn 6 file của lần nộp mới nhất. Admin chỉ chấm được bản mới nhất này.
+- Lần nộp **lỗi** không đè bài đang có (bài thành công trước đó vẫn được giữ để chấm).
+- File **Thong_ke_nop_bai_Vong1** (Google Sheet, mở hoặc *Tải xuống → Excel .xlsx*): mỗi đội một dòng – lần nộp gần
+  nhất, kết quả (thành công / lỗi + lý do), số lần nộp, bản được chấm, file đã nộp, link thư mục, trạng thái chấm,
+  tổng điểm và điểm từng bài (tự cập nhật khi admin chấm / duyệt tay). Trang admin có link *File thống kê nộp bài*.
+- Không sửa tay file thống kê trong lúc thi (script ghi vào theo cột Mã đội).
 
 > **Sửa Code.gs / Index.html sau này**: sửa xong → **Deploy → Manage deployments** → bấm bút chì ✏️ →
 > *Version*: **New version** → **Deploy**. Link `/exec` giữ nguyên. (Chỉ Ctrl+S thì trang thật chưa đổi.)
@@ -59,7 +71,7 @@ Cần chuẩn bị: 1 tài khoản **Gmail** (chứa bài nộp), 1 tài khoản
    git add .
    git commit -m "Web cham bai: Vercel + Apps Script"
    git remote set-url origin https://github.com/<TEN_GITHUB_CUA_BAN>/olympic-ai.git
-   git push -u origin master
+   git push -u origin main
    ```
    - `git rm` gỡ dữ liệu chạy thử (có khóa phiên) khỏi Git, file trên máy vẫn còn. Báo *"did not match"* thì bỏ qua.
    - Lần đầu push, cửa sổ đăng nhập GitHub hiện ra → **Sign in with your browser**.
@@ -91,8 +103,9 @@ Cần chuẩn bị: 1 tài khoản **Gmail** (chứa bài nộp), 1 tài khoản
 2. Mở trang nộp bài (link Apps Script), nộp thử bộ mẫu `bai_giai_mau\2_python_gop\`:
    Mã đội `MAU`, Tên đội `Đội mẫu`, ô Phiếu: `MAU_PhieuTraLoi_Vong1.docx`, ô Bài 1–5: `MAU_Bai1.py`…`MAU_Bai5.py`
    → **Nộp bài** → phải hiện **"Nộp thành công"**.
-3. Google Drive → `OlympicAI_Vong1/bai_nop/` → có thư mục `MAU_...` chứa 6 file.
-4. Trang admin (tải lại) → dòng **MAU** → **Chấm** → đợi trang tải lại → **25/25**.
+3. Google Drive → `OlympicAI_Vong1/bai_nop/` → có thư mục `MAU` chứa 6 file; file `Thong_ke_nop_bai_Vong1` có dòng MAU.
+   Nộp lại bộ mẫu lần nữa → thư mục `MAU` vẫn chỉ 6 file, file thống kê ghi *Số lần nộp* = 2.
+4. Trang admin (tải lại) → dòng **MAU** → **Chấm** → đợi trang tải lại → **25/25** (file thống kê cũng hiện 25).
 5. Nộp thử sai tên đội (`Đội khác`) → phải báo **NỘP LỖI**; trang admin hiện lần đó là *Nộp lỗi*.
 
 ## Phần E. Ngày thi
@@ -103,12 +116,14 @@ Cần chuẩn bị: 1 tài khoản **Gmail** (chứa bài nộp), 1 tài khoản
 3. Hết giờ → admin bấm **Chấm các bài chưa chấm** (mỗi lượt tối đa ~4 phút, còn đội chưa chấm thì bấm lại),
    hoặc **Chấm** từng đội ở cuối dòng.
 4. Duyệt tay phần **Chờ duyệt** → **Bảng xếp hạng** → **Tải CSV**.
-5. Sao lưu: Drive → chuột phải thư mục `OlympicAI_Vong1` → **Tải xuống**.
+5. Sao lưu: Drive → chuột phải thư mục `OlympicAI_Vong1` → **Tải xuống** (file thống kê tải về dạng Excel).
 
 ## Cập nhật sau này
 
 - Sửa web chấm (`web/`, `cham_diem/`): `git add . ; git commit -m "..." ; git push` → Vercel tự deploy lại.
 - Sửa trang nộp bài (`apps_script/`): dán lại vào script.google.com → **Deploy → Manage deployments → ✏️ → New version**.
+  Đã cài bản cũ (chưa có file thống kê) thì sau khi dán `Code.gs` mới, chạy lại **caiDatLanDau** một lần để tạo file
+  thống kê và cấp quyền Google Sheets (khóa API và bài đã nộp giữ nguyên).
 - Đổi biến môi trường trên Vercel → **Deployments** → bản mới nhất → **⋯ → Redeploy**.
 
 ## Lỗi thường gặp

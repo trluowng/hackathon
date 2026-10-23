@@ -287,7 +287,7 @@ def admin_tong_quan(request: Request):
         return ve("/admin/dang-nhap")
     hang = [tong_hop_doi(d) for d in kho.ds_doi()]
     return trang(request, "admin_tong_quan.html", hang=hang, cham_dong_bo=hang_doi_cham.DONG_BO,
-                 link_nop_bai=kho.NOP_BAI_NGOAI or str(request.base_url),
+                 link_nop_bai=kho.NOP_BAI_NGOAI or str(request.base_url), lien_ket=kho.lien_ket(),
                  so_chua_cham=sum(h["trang_thai"] == "chua_cham" for h in hang),
                  han_nop=kho.doc_cai_dat("han_nop", ""), mo_nop=kho.doc_cai_dat("mo_nop", "1") == "1")
 

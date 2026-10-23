@@ -8,7 +8,9 @@
  *   3. Deploy > New deployment > Web app: Execute as "Me", Who has access "Anyone".
  *
  * Lưu trữ:
- *   Drive:  OlympicAI_Vong1/bai_nop/<MÃ>_<ngày-giờ>/  (file bài + kiem_tra.json, ket_qua.json, duyet.json)
+ *   Drive:  OlympicAI_Vong1/bai_nop/<MÃ>/   mỗi đội MỘT thư mục: lần nộp thành công sau ĐÈ lên bài trước
+ *           (file bài + kiem_tra.json, ket_qua.json, duyet.json của bài mới nhất). Lần nộp lỗi không đè.
+ *   Google Sheet "Thong_ke_nop_bai_Vong1" (trong OlympicAI_Vong1): mỗi đội một dòng, cập nhật mỗi lần nộp và khi chấm.
  *   Script Properties: ln_<id> = thông tin từng lần nộp (để liệt kê nhanh), cd_<tên> = cài đặt, doi = danh sách đội.
  */
 var TEN_THU_MUC_GOC = 'OlympicAI_Vong1';
@@ -32,8 +34,50 @@ function caiDatLanDau() {
   if (!p.getProperty('KHOA_API')) {
     p.setProperty('KHOA_API', Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, ''));
   }
+  bangThongKe_();
   Logger.log('Thư mục lưu bài: https://drive.google.com/drive/folders/' + p.getProperty('ID_GOC'));
+  Logger.log('File thống kê: https://docs.google.com/spreadsheets/d/' + p.getProperty('ID_SHEET'));
   Logger.log('APPS_SCRIPT_KHOA (dán vào Vercel): ' + p.getProperty('KHOA_API'));
+}
+
+// ---------- File thống kê (Google Sheet, tải về được dạng Excel) ----------
+
+var COT_THONG_KE = ['Mã đội', 'Tên đội', 'Lần nộp gần nhất', 'Kết quả lần gần nhất', 'Lý do nộp lỗi',
+  'Số lần nộp', 'Số lần nộp thành công', 'Bản được chấm (nộp lúc)', 'File đã nộp', 'Thư mục bài',
+  'Trạng thái chấm', 'Tổng điểm', 'Bài 1', 'Bài 2', 'Bài 3', 'Bài 4', 'Bài 5'];
+var TEN_TRANG_THAI = {cho_cham: 'Chờ chấm', dang_cham: 'Đang chấm', da_cham: 'Đã chấm', loi: 'Lỗi khi chấm',
+  bo_qua: 'Bỏ qua'};
+
+function bangThongKe_() {
+  var p = props_();
+  var id = p.getProperty('ID_SHEET');
+  if (id) return SpreadsheetApp.openById(id).getSheets()[0];
+  var ss = SpreadsheetApp.create('Thong_ke_nop_bai_Vong1');
+  DriveApp.getFileById(ss.getId()).moveTo(DriveApp.getFolderById(p.getProperty('ID_GOC')));
+  var sh = ss.getSheets()[0];
+  sh.setName('Thống kê');
+  sh.getRange('A:A').setNumberFormat('@');  // mã đội giữ nguyên dạng chữ (vd 001)
+  sh.getRange(1, 1, 1, COT_THONG_KE.length).setValues([COT_THONG_KE]).setFontWeight('bold');
+  sh.setFrozenRows(1);
+  p.setProperty('ID_SHEET', ss.getId());
+  return sh;
+}
+
+/** Sửa dòng của đội (thêm mới nếu chưa có). sua(hang) nhận {tên cột: giá trị} và sửa tại chỗ. Gọi trong khóa. */
+function capNhatThongKe_(ma, sua) {
+  var sh = bangThongKe_();
+  var cuoi = sh.getLastRow();
+  var cotMa = cuoi > 1 ? sh.getRange(2, 1, cuoi - 1, 1).getValues() : [];
+  var dong = cuoi + 1;
+  for (var i = 0; i < cotMa.length; i++) {
+    if (String(cotMa[i][0]) === ma) { dong = i + 2; break; }
+  }
+  var giaTri = dong <= cuoi ? sh.getRange(dong, 1, 1, COT_THONG_KE.length).getValues()[0] : [];
+  var hang = {};
+  COT_THONG_KE.forEach(function (c, j) { hang[c] = giaTri[j] === undefined ? '' : giaTri[j]; });
+  hang['Mã đội'] = ma;
+  sua(hang);
+  sh.getRange(dong, 1, 1, COT_THONG_KE.length).setValues([COT_THONG_KE.map(function (c) { return hang[c]; })]);
 }
 
 // ---------- Thời gian, trạng thái nộp ----------
@@ -128,22 +172,72 @@ function loiTep_(tep) {
   return loi;
 }
 
+function thuMucDoi_(ma) {
+  var baiNop = DriveApp.getFolderById(props_().getProperty('ID_BAI_NOP'));
+  var it = baiNop.getFoldersByName(ma);
+  return it.hasNext() ? it.next() : baiNop.createFolder(ma);
+}
+
+/**
+ * Lần nộp thành công: ĐÈ bài cũ của đội (bỏ hết file cũ, kể cả kết quả chấm cũ) -> thư mục đội chỉ còn bài mới nhất.
+ * Lần nộp lỗi: không đụng tới bài đang có, chỉ ghi lại để admin và file thống kê biết.
+ */
 function luuLanNop_(ma, ten, luc, tep, loi, hidden) {
   var p = props_();
   var gon = luc.replace(/[-:]/g, '').replace('T', '-');
   var id = gon + '-' + ma + '-' + Utilities.getUuid().slice(0, 6);
-  var thuMuc = DriveApp.getFolderById(p.getProperty('ID_BAI_NOP')).createFolder(ma + '_' + gon);
-  var cacFile = [];
-  tep.forEach(function (t) {
-    if (t.bytes.length > DUNG_LUONG_TOI_DA) return;
-    var tenFile = ma + '_' + (t.o === 'phieu' ? 'PhieuTraLoi' : 'Bai' + t.o) + duoi_(t.ten);
-    thuMuc.createFile(Utilities.newBlob(t.bytes, 'application/octet-stream', tenFile));
-    cacFile.push(tenFile);
-  });
-  p.setProperty('ln_' + id, JSON.stringify({
-    id: id, ma_doi: ma, ten_doi: ten, thoi_gian: luc, loi: loi, hidden: hidden,
-    thu_muc: thuMuc.getId(), cac_file: cacFile
-  }));
+  // ms: thứ tự nộp chính xác tới mili giây (hai lần nộp trong cùng một giây vẫn phân biệt được)
+  var ghi = {id: id, ma_doi: ma, ten_doi: ten, thoi_gian: luc, ms: new Date().getTime(), loi: loi, hidden: hidden,
+             thu_muc: '', cac_file: []};
+  if (!loi) {
+    var thuMuc = thuMucDoi_(ma);
+    var cu = thuMuc.getFiles();
+    while (cu.hasNext()) cu.next().setTrashed(true);
+    tep.forEach(function (t) {
+      var tenFile = ma + '_' + (t.o === 'phieu' ? 'PhieuTraLoi' : 'Bai' + t.o) + duoi_(t.ten);
+      thuMuc.createFile(Utilities.newBlob(t.bytes, 'application/octet-stream', tenFile));
+      ghi.cac_file.push(tenFile);
+    });
+    ghi.thu_muc = thuMuc.getId();
+  }
+  var khoa = LockService.getScriptLock();
+  khoa.waitLock(120000);
+  try {
+    if (!loi) {  // các lần nộp trước của đội không còn file (đã bị bản mới đè)
+      API_.ds().forEach(function (r) {
+        if (r.ma_doi === ma && r.id !== id && !r.thay_the && !r.loi) {
+          r.thay_the = true;
+          r.cac_file = [];
+          p.setProperty('ln_' + r.id, JSON.stringify(r));
+        }
+      });
+    }
+    p.setProperty('ln_' + id, JSON.stringify(ghi));
+    capNhatThongKe_(ma, function (h) {
+      if (!loi || !h['Tên đội']) h['Tên đội'] = ten;
+      h['Lần nộp gần nhất'] = luc;
+      h['Kết quả lần gần nhất'] = loi ? 'Nộp lỗi' : 'Nộp thành công';
+      h['Lý do nộp lỗi'] = loi ? loi.join(' | ') : '';
+      h['Số lần nộp'] = (Number(h['Số lần nộp']) || 0) + 1;
+      if (!loi) {
+        h['Số lần nộp thành công'] = (Number(h['Số lần nộp thành công']) || 0) + 1;
+        h['Bản được chấm (nộp lúc)'] = luc;
+        h['File đã nộp'] = ghi.cac_file.join(', ');
+        h['Thư mục bài'] = 'https://drive.google.com/drive/folders/' + ghi.thu_muc;
+        h['Trạng thái chấm'] = 'Chưa chấm';
+        ['Tổng điểm', 'Bài 1', 'Bài 2', 'Bài 3', 'Bài 4', 'Bài 5'].forEach(function (c) { h[c] = ''; });
+      }
+    });
+  } finally {
+    khoa.releaseLock();
+  }
+}
+
+/** Lần nộp thành công mới nhất của đội (bản được chấm). */
+function banChamCuaDoi_(ma) {
+  var ds = API_.ds().filter(function (r) { return r.ma_doi === ma && !r.loi && !r.thay_the; });
+  ds.sort(function (a, b) { return (a.ms || 0) - (b.ms || 0); });
+  return ds.length ? ds[ds.length - 1] : null;
 }
 
 // ---------- Đọc phiếu Word (thuần JavaScript, không phụ thuộc Apps Script - test được bằng Node) ----------
@@ -283,15 +377,23 @@ var API_ = {
   doi: function () {
     return JSON.parse(props_().getProperty('doi') || '{}');
   },
+  /** Link thư mục bài nộp và file thống kê để trang admin hiển thị. */
+  lien_ket: function () {
+    bangThongKe_();
+    var p = props_();
+    return {thu_muc: 'https://drive.google.com/drive/folders/' + p.getProperty('ID_GOC'),
+            thong_ke: 'https://docs.google.com/spreadsheets/d/' + p.getProperty('ID_SHEET')};
+  },
   ghi_doi: function (yc) {
     props_().setProperty('doi', JSON.stringify(yc.du_lieu || {}));
     return true;
   },
-  /** File bài nộp (base64). yc.ten: chỉ lấy một file. */
+  /** File bài nộp (base64). yc.ten: chỉ lấy một file. Lần nộp đã bị đè / nộp lỗi: không có file. */
   tai_file: function (yc) {
     var ghi = banGhi_(yc.id);
-    var thuMuc = DriveApp.getFolderById(ghi.thu_muc);
     var ra = {};
+    if (!ghi.thu_muc || ghi.thay_the) return ra;
+    var thuMuc = DriveApp.getFolderById(ghi.thu_muc);
     ghi.cac_file.forEach(function (ten) {
       if (yc.ten && ten !== yc.ten) return;
       var f = timFile_(thuMuc, ten);
@@ -301,12 +403,16 @@ var API_ = {
   },
   /** Đọc / ghi file JSON trong thư mục lần nộp: kiem_tra.json, ket_qua.json, duyet.json. */
   doc_json: function (yc) {
-    var f = timFile_(DriveApp.getFolderById(banGhi_(yc.id).thu_muc), yc.ten);
+    var ghi = banGhi_(yc.id);
+    if (!ghi.thu_muc || ghi.thay_the) return null;  // file trong thư mục đội giờ thuộc về bài mới hơn
+    var f = timFile_(DriveApp.getFolderById(ghi.thu_muc), yc.ten);
     return f ? JSON.parse(f.getBlob().getDataAsString('UTF-8')) : null;
   },
   ghi_json: function (yc) {
     if (['kiem_tra.json', 'ket_qua.json', 'duyet.json'].indexOf(yc.ten) < 0) throw new Error('Tên file không hợp lệ');
-    var thuMuc = DriveApp.getFolderById(banGhi_(yc.id).thu_muc);
+    var ghi = banGhi_(yc.id);
+    if (!ghi.thu_muc || ghi.thay_the) throw new Error('Lần nộp này không còn là bài mới nhất của đội');
+    var thuMuc = DriveApp.getFolderById(ghi.thu_muc);
     var noiDung = JSON.stringify(yc.du_lieu);
     var f = timFile_(thuMuc, yc.ten);
     if (f) f.setContent(noiDung);
@@ -320,9 +426,20 @@ var API_ = {
     try {
       var ghi = banGhi_(yc.id);
       Object.keys(yc.sua || {}).forEach(function (k) {
-        if (['id', 'ma_doi', 'thoi_gian', 'thu_muc', 'cac_file', 'loi', 'hidden'].indexOf(k) < 0) ghi[k] = yc.sua[k];
+        if (['id', 'ma_doi', 'thoi_gian', 'thu_muc', 'cac_file', 'loi', 'hidden', 'thay_the'].indexOf(k) < 0) {
+          ghi[k] = yc.sua[k];
+        }
       });
       props_().setProperty('ln_' + yc.id, JSON.stringify(ghi));
+      var banCham = banChamCuaDoi_(ghi.ma_doi);
+      if (banCham && banCham.id === ghi.id) {  // ghi trạng thái chấm + điểm của bài mới nhất vào file thống kê
+        capNhatThongKe_(ghi.ma_doi, function (h) {
+          h['Trạng thái chấm'] = TEN_TRANG_THAI[ghi.tt] || ghi.tt || '';
+          var coDiem = ghi.tt === 'da_cham' && ghi.tong !== undefined && ghi.tong !== null;
+          h['Tổng điểm'] = coDiem ? ghi.tong : '';
+          for (var i = 1; i <= 5; i++) h['Bài ' + i] = coDiem && ghi.diem_bai ? ghi.diem_bai[i - 1] : '';
+        });
+      }
       return true;
     } finally {
       khoa.releaseLock();

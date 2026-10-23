@@ -77,6 +77,14 @@ def khoi_tao():
         raise LoiAppsScript("Thiếu biến môi trường APPS_SCRIPT_URL / APPS_SCRIPT_KHOA")
 
 
+def lien_ket():
+    """{"thu_muc": link thư mục bài nộp trên Drive, "thong_ke": link file thống kê Google Sheet}."""
+    try:
+        return _nho("lien_ket", 600, lambda: _goi("lien_ket"))
+    except LoiAppsScript:
+        return {}
+
+
 # ---------- Cài đặt ----------
 
 def doc_cai_dat(khoa, mac_dinh=None):
@@ -99,7 +107,7 @@ def khoa_phien():
 # ---------- Lần nộp ----------
 
 def _ds():
-    return _nho("ds", 3, lambda: sorted(_goi("ds") or [], key=lambda r: (r.get("thoi_gian", ""), r["id"])))
+    return _nho("ds", 3, lambda: sorted(_goi("ds") or [], key=lambda r: (r.get("thoi_gian", ""), r.get("ms", 0), r["id"])))
 
 
 def _cua_doi(ma_doi):
@@ -123,7 +131,7 @@ def _so_thu_tu(ban_ghi):
 def _nhe(r, so):
     return {"id": r["id"], "ma_doi": r["ma_doi"], "ten_doi": r.get("ten_doi", ""), "thoi_gian": r.get("thoi_gian", ""),
             "thu_muc": r.get("thu_muc"), "hidden_dung": bool(r.get("hidden")), "loi_nop": r.get("loi") or None,
-            "cac_file": r.get("cac_file", []), "kiem_tra": {}, "so": so}
+            "cac_file": r.get("cac_file", []), "kiem_tra": {}, "so": so, "thay_the": bool(r.get("thay_the"))}
 
 
 def _day_du(r, so):
@@ -157,7 +165,7 @@ def dem_lan_nop(ma_doi):
 
 def lan_nop_moi_nhat(ma_doi, ca_nop_loi=False):
     for so, r in reversed(_cua_doi(ma_doi)):
-        if ca_nop_loi or not r.get("loi"):
+        if ca_nop_loi or not (r.get("loi") or r.get("thay_the")):
             return _nhe(r, so)
     return None
 

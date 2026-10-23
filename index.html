@@ -1,0 +1,1765 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Khủng Long Chiến Binh</title>
+<style>
+  :root { --bg: #f7f7f7; --fg: #535353; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--fg);
+    font-family: "Courier New", monospace;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 18px; padding: 16px; box-sizing: border-box;
+    user-select: none; -webkit-user-select: none;
+  }
+  canvas {
+    display: block; width: min(1000px, 100%); height: auto;
+    image-rendering: pixelated; touch-action: manipulation; outline: none;
+  }
+</style>
+</head>
+<body>
+<canvas id="game" width="900" height="300" tabindex="0"></canvas>
+
+<script>
+'use strict';
+
+// ================== CẤU HÌNH ==================
+const W = 900, H = 300, GROUND = 252, S = 2;
+const BASE_SPEED = 380, MAX_SPEED = 1000, ACCEL = 0.1125;  // tốc độ tăng dần (đã giảm còn 1/4 so với ban đầu)
+const GRAVITY = 2600, JUMP_V = 840;
+const BULLET_SPEED = 950, BOMB_G = 1300;
+const MAX_LIVES = 3;
+const BOSS_GAP_MIN = 1500, BOSS_GAP_MAX = 2000; // cứ 1500–2000 điểm có 1 boss
+const BOSS_TIME = 60;                            // giây trước khi boss bỏ chạy
+
+// w = tần suất bình thường, bw = tần suất khi đánh boss
+const ITEM_INFO = {
+  sword:  { name: 'KIẾM',  hint: '[A]',      color: '#7e57c2', w: 3,   bw: 1.5 },
+  gun:    { name: 'SÚNG',  hint: '[A]',      color: '#ff7043', w: 3,   bw: 3 },
+  bomb:   { name: 'BOM',   hint: '[A]',      color: '#e53935', w: 2,   bw: 3 },
+  laser:  { name: 'LASER', hint: '[A] giữ',  color: '#00bcd4', w: 1.2, bw: 2 },
+  shield: { name: 'KHIÊN', hint: 'bất tử',   color: '#1e88e5', w: 2,   bw: 0.3 },
+  boots:  { name: 'GIÀY',  hint: 'nhảy đôi', color: '#43a047', w: 2,   bw: 0.5 },
+  jetpack:{ name: 'JETPACK', hint: 'giữ ↑ bay', color: '#f9a825', w: 1.5, bw: 0.6 },
+  heart:  { name: 'MẠNG',  hint: '',         color: '#e91e63', w: 0.8, bw: 0.8, instant: true },
+  plane:  { name: 'MÁY BAY', hint: '',       color: '#0288d1', w: 0,   bw: 0,   instant: true },   // chỉ xuất hiện khi gặp boss bay
+};
+const TIMED = Object.keys(ITEM_INFO).filter(k => !ITEM_INFO[k].instant);
+const WEAPONS = ['sword', 'gun', 'bomb', 'laser'];   // chỉ cầm 1 vũ khí; khiên & giày dùng song song
+const MONSTER_PTS = { cactus: 20, bird: 50, scorpion: 30, slime: 30, bat: 40, drone: 40, boar: 40, mole: 40, wasp: 50, golem: 60 };
+// Quái mở khoá dần theo điểm: [loại, điểm mở khoá, tần suất ban đầu, tần suất tăng thêm mỗi 1000 điểm, tên]
+const MONSTER_TABLE = [
+  ['cactus',   0,    5,   0,   'XƯƠNG RỒNG'],
+  ['bird',     250,  2,   0.3, 'CHIM'],
+  ['scorpion', 400,  1.5, 0.3, 'BỌ CẠP'],
+  ['slime',    550,  1.5, 0.3, 'SLIME NHẢY'],
+  ['bat',      700,  1.2, 0.3, 'DƠI'],
+  ['boar',     1000, 1.2, 0.4, 'HEO RỪNG'],
+  ['mole',     1400, 1.2, 0.4, 'GIUN CÁT'],
+  ['wasp',     1800, 1.0, 0.4, 'ONG BẮP CÀY'],
+  ['golem',    2400, 0.8, 0.4, 'NGƯỜI ĐÁ'],
+  ['flock',    3000, 0.6, 0.3, 'ĐÀN CHIM'],
+];
+// Thời gian dùng vật phẩm: khởi đầu 10 giây, điểm càng cao càng lâu (tối đa 30 giây)
+const itemDuration = () => Math.min(30, 10 + score() / 300);
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+function resize() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  canvas.width = W * dpr; canvas.height = H * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ================== SPRITE ==================
+// '#' = thân, '.' = mắt (màu nền), các ký tự khác tô theo bảng màu
+const DINO_BODY = [
+  "           ########",
+  "          ##.#######",
+  "          ##########",
+  "          ##########",
+  "          #####",
+  "          ########",
+  "#        #####",
+  "#       #######",
+  "##     #########",
+  "###   ##########",
+  "#############  #",
+  " ############",
+  "  ##########",
+  "   ########",
+  "    ######",
+];
+const LEGS = {
+  stand: ["    ###  ##", "    ##    #", "    #     #", "    ##    ##"],
+  run1:  ["    ###  ##", "    ##    ##", "    #", "    ##"],
+  run2:  ["    ###  ##", "     ##   #", "          #", "          ##"],
+};
+const DINO_DUCK = [
+  "                  ########",
+  "#      ############.######",
+  "###  #####################",
+  "##########################",
+  "#####################  ###",
+  " ##################",
+  "  ############ ##",
+  "   #########",
+];
+const DUCK_LEGS = {
+  stand: ["    ##    #", "    #     #", "    ##    ##"],
+  run1:  ["    ##    #", "    #     ##", "    ##"],
+  run2:  ["    ##    #", "     #    #", "          ##"],
+};
+const BIRD_A = [
+  "        #", "        ##", "        ###", "   ##   ####", "  ####  #####", " ##.##  ######",
+  "###################", "    ##############", "      #########", "", "", "",
+];
+const BIRD_B = [
+  "", "", "", "   ##", "  ####", " ##.##",
+  "###################", "    ##############", "      #########", "        #####", "        ###", "        ##",
+];
+const SCORP_A = [
+  "            ###",
+  "           #   #",
+  "               #",
+  " ##           ##",
+  "#  #  ####### #",
+  " ##.###########",
+  "  #############",
+  "  # # # # # #",
+];
+const SCORP_B = SCORP_A.slice(0, 7).concat(["   # # # # # #"]);
+const SLIME_A = [
+  "     ####",
+  "   ########",
+  "  ##########",
+  " ############",
+  " #..##..#####",
+  "##r.##r.######",
+  "##############",
+  "##############",
+  " ############",
+];
+const BAT_A = [
+  "#               #",
+  "##     # #     ##",
+  "###    ###    ###",
+  "####  #r#r#  ####",
+  " ###############",
+  "  ####  #  ####",
+  "        #",
+  "",
+];
+const BAT_B = [
+  "",
+  "       # #",
+  "       ###",
+  "  ####r#r####",
+  " ###############",
+  "####   ###   ####",
+  "###     #     ###",
+  "##             ##",
+];
+const DRAGON_A = [
+  "             w        w",
+  "            ww       ww",
+  "           www      www",
+  "          wwww     wwww",
+  "  ##     wwwww    wwwww",
+  " ####   wwwwwwwwwwwwww",
+  "##r###  #############",
+  "########################   #",
+  "yy##########yyyyy######## ##",
+  " y ####  ##yyyyy############",
+  "    ##     #############",
+  "           ##    ##",
+  "           #     #",
+  "          ##    ##",
+];
+const DRAGON_B = [
+  "", "", "", "",
+  "  ##",
+  " ####",
+  "##r###  #############",
+  "########################   #",
+  "yy##########yyyyy######## ##",
+  " y ####  ##yyyyy############",
+  "    ##   wwwwwwwwwwwww",
+  "          wwwww ##wwww",
+  "           wwww #  www",
+  "            www##   ww",
+];
+// Máy bay chiến đấu (khủng long ngồi trong buồng lái)
+const JET = [
+  "             kkkkk",
+  "            kk.kkk",
+  "  dd       cckkkkcc",
+  "  ddd     cccccccccc",
+  "  dddd   cccccccccccc",
+  " ###########################",
+  "d###rrrrrr####################yy",
+  " ##############################y",
+  "   ######dddddddd########",
+  "          dddddddd",
+  "           dddddd",
+];
+const JET_W = 33 * S, JET_H = JET.length * S;
+const BOAR_BODY = [
+  "         ## ##",
+  "   ##############",
+  "  ##.#############",
+  "ww################",
+  " w#################",
+  "  #################",
+  "   ###############",
+];
+const BOAR_A = BOAR_BODY.concat(["   ##   ##   ##  ##", "  ##    #   ##   #"]);
+const BOAR_B = BOAR_BODY.concat(["    ## ##    ## ##", "    #   ##    #  ##"]);
+const STAND_HB = [[11, 0, 9, 5], [2, 6, 13, 8], [4, 14, 7, 5]];
+const DUCK_HB  = [[18, 0, 8, 3], [2, 1, 23, 6], [4, 8, 7, 3]];
+const BIRD_HB  = [[1, 4, 17, 5]];
+
+// ================== ÂM THANH ==================
+let actx = null;
+function ensureAudio() {
+  if (!actx) { try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} }
+  if (actx && actx.state === 'suspended') actx.resume();
+}
+function tone(f1, f2, dur, type = 'square', vol = 0.05, delay = 0) {
+  if (!actx) return;
+  const t = actx.currentTime + delay;
+  const o = actx.createOscillator(), g = actx.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(f1, t);
+  if (f2 !== f1) o.frequency.exponentialRampToValueAtTime(f2, t + dur);
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g).connect(actx.destination);
+  o.start(t); o.stop(t + dur + 0.02);
+}
+function noise(dur, vol = 0.1, freq = 1500) {
+  if (!actx) return;
+  const len = Math.floor(actx.sampleRate * dur);
+  const buf = actx.createBuffer(1, len, actx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+  const src = actx.createBufferSource(), f = actx.createBiquadFilter(), g = actx.createGain();
+  src.buffer = buf; f.type = 'bandpass'; f.frequency.value = freq; g.gain.value = vol;
+  src.connect(f).connect(g).connect(actx.destination);
+  src.start();
+}
+const SFX = {
+  jump:    () => tone(520, 780, 0.09, 'square', 0.035),
+  double:  () => tone(700, 1200, 0.1, 'square', 0.035),
+  point:   () => { tone(880, 880, 0.08, 'square', 0.035); tone(1320, 1320, 0.1, 'square', 0.035, 0.09); },
+  die:     () => tone(320, 70, 0.4, 'sawtooth', 0.06),
+  hurt:    () => { tone(420, 110, 0.25, 'square', 0.06); noise(0.15, 0.1, 600); },
+  pickup:  () => [660, 880, 1100, 1320].forEach((f, i) => tone(f, f, 0.07, 'square', 0.035, i * 0.06)),
+  heart:   () => [523, 659, 784, 1046].forEach((f, i) => tone(f, f, 0.1, 'triangle', 0.06, i * 0.08)),
+  slash:   () => noise(0.12, 0.15, 2600),
+  shoot:   () => tone(1300, 280, 0.08, 'square', 0.035),
+  throw:   () => tone(420, 200, 0.12, 'triangle', 0.05),
+  boom:    () => { noise(0.5, 0.3, 280); tone(160, 40, 0.4, 'sine', 0.15); },
+  laser:   () => tone(1900, 1700, 0.08, 'sawtooth', 0.012),
+  cut:     () => { noise(0.12, 0.12, 1200); tone(320, 140, 0.1, 'triangle', 0.05); },
+  kill:    () => { noise(0.15, 0.12, 900); tone(700, 200, 0.14, 'triangle', 0.05); },
+  block:   () => { tone(220, 660, 0.12, 'triangle', 0.08); noise(0.08, 0.08, 3000); },
+  deflect: () => tone(1500, 2400, 0.07, 'square', 0.03),
+  expire:  () => tone(500, 240, 0.18, 'triangle', 0.05),
+  warn:    () => [0, 0.4, 0.8].forEach(d => tone(880, 440, 0.3, 'square', 0.045, d)),
+  bosshit: () => tone(240, 160, 0.05, 'square', 0.03),
+  bossdie: () => { noise(1.2, 0.3, 250); tone(300, 30, 1.2, 'sawtooth', 0.08); },
+  spike:   () => tone(900, 500, 0.06, 'square', 0.025),
+  fire:    () => noise(0.15, 0.07, 700),
+  jet:     () => { noise(0.6, 0.12, 500); tone(200, 900, 0.6, 'sawtooth', 0.04); },
+  roar:    () => { tone(140, 60, 0.6, 'sawtooth', 0.09); noise(0.5, 0.12, 300); },
+  charge:  () => tone(300, 1400, 0.7, 'sine', 0.05),
+  thrust:  () => noise(0.12, 0.05, 400),
+  unlock:  () => [440, 660].forEach((f, i) => tone(f, f, 0.12, 'triangle', 0.04, i * 0.12)),
+  beam:    () => { tone(1200, 400, 0.45, 'sawtooth', 0.05); noise(0.4, 0.1, 2000); },
+};
+function sfx(n) { try { SFX[n] && SFX[n](); } catch (e) {} }
+
+// ================== TRẠNG THÁI ==================
+let state = 'ready';            // ready | running | paused | over
+let speed, dist, bonus, time, lives;
+let obstacles, items, bullets, bombs, shots, particles, texts, booms;
+let effects, gapLeft, itemTimer, shakeT, overT, lastMilestone;
+let boss, bossPending, bossNextAt, bossLevel, warnT, warnText, laserOn, laserSndT, bossHitSndT;
+let jetMode = false, lastBossType = null, heartTimer = 0, effectsMax = {}, unlockIdx = 0, thrustSndT = 0;
+let nightT = 0;
+let hiScore = 0;
+try { hiScore = parseInt(localStorage.getItem('dino_hi') || '0', 10) || 0; } catch (e) {}
+const keys = { jump: false, down: false, left: false, right: false, attack: false };
+const dino = {};
+
+const clouds = Array.from({ length: 4 }, (_, i) => ({ x: 120 + i * 230 + Math.random() * 80, y: 40 + Math.random() * 70 }));
+const pebbles = Array.from({ length: 40 }, () => ({ x: Math.random() * W, y: GROUND + 2 + Math.random() * 12, w: 1 + Math.floor(Math.random() * 3) }));
+const stars = Array.from({ length: 30 }, () => ({ x: Math.random() * W, y: 15 + Math.random() * 150, s: Math.random() < 0.3 ? 2 : 1 }));
+
+function rand(a, b) { return a + Math.random() * (b - a); }
+function overlap(a, b) { return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y; }
+function circleRect(cx, cy, r, rc) {
+  const nx = Math.max(rc.x, Math.min(cx, rc.x + rc.w)), ny = Math.max(rc.y, Math.min(cy, rc.y + rc.h));
+  return (nx - cx) ** 2 + (ny - cy) ** 2 <= r * r;
+}
+// Đoạn thẳng cắt hình chữ nhật (Liang–Barsky), dùng cho laser
+function segRect(L, r, pad = 3) {
+  const dx = L.x1 - L.x0, dy = L.y1 - L.y0;
+  const p = [-dx, dx, -dy, dy];
+  const q = [L.x0 - (r.x - pad), (r.x + r.w + pad) - L.x0, L.y0 - (r.y - pad), (r.y + r.h + pad) - L.y0];
+  let t0 = 0, t1 = 1;
+  for (let i = 0; i < 4; i++) {
+    if (p[i] === 0) { if (q[i] < 0) return false; continue; }
+    const t = q[i] / p[i];
+    if (p[i] < 0) { if (t > t1) return false; if (t > t0) t0 = t; }
+    else { if (t < t0) return false; if (t < t1) t1 = t; }
+  }
+  return true;
+}
+function pickWeighted(entries) {
+  const total = entries.reduce((s, e) => s + e[1], 0);
+  let r = Math.random() * total;
+  for (const [k, w] of entries) if ((r -= w) <= 0) return k;
+  return entries[entries.length - 1][0];
+}
+const pts = () => dist / 40;
+const score = () => Math.floor(pts()) + bonus;
+
+function reset() {
+  speed = BASE_SPEED; dist = 0; bonus = 0; time = 0; lives = 2;
+  obstacles = []; items = []; bullets = []; bombs = []; shots = []; particles = []; texts = []; booms = [];
+  effects = {}; effectsMax = {}; for (const k of TIMED) { effects[k] = 0; effectsMax[k] = 10; }
+  unlockIdx = 1; thrustSndT = 0;
+  gapLeft = 650; itemTimer = rand(8, 25); heartTimer = rand(20, 45); shakeT = 0; overT = 0; lastMilestone = 0;
+  boss = null; bossPending = false; bossNextAt = rand(BOSS_GAP_MIN, BOSS_GAP_MAX); bossLevel = 0; lastBossType = null; jetMode = false;
+  warnT = 0; warnText = ''; laserOn = false; laserSndT = 0; bossHitSndT = 0;
+  Object.assign(dino, { x: 60, y: 0, vy: 0, onGround: true, ducking: false, runT: 0, slashT: 0, slashCD: 0,
+                        shootCD: 0, bombCD: 0, flashT: 0, invT: 0, doubleUsed: false, dead: false, thrust: false });
+}
+
+// ================== KHỦNG LONG ==================
+function dinoSprite() {
+  if (jetMode) {
+    const top = Math.round(GROUND - dino.y - JET_H);
+    return { rows: JET, top, h: JET_H, w: JET_W, duck: false, jet: true, hand: { x: dino.x + JET_W - 6, y: top + 14 } };
+  }
+  const duck = dino.ducking && !dino.dead;
+  const set = duck ? DUCK_LEGS : LEGS;
+  let legs = set.stand;
+  if (!dino.dead && dino.onGround && state !== 'ready') legs = (Math.floor(dino.runT * 10) % 2) ? set.run1 : set.run2;
+  const rows = (duck ? DINO_DUCK : DINO_BODY).concat(legs);
+  const h = rows.length * S;
+  const top = Math.round(GROUND - dino.y - h);
+  const hand = duck ? { x: dino.x + 16 * S, y: top + 6 * S } : { x: dino.x + 15 * S, y: top + 10 * S };
+  return { rows, top, h, duck, hand, w: (duck ? 26 : 20) * S };
+}
+function dinoRects() {
+  const sp = dinoSprite();
+  if (sp.jet) return [{ x: dino.x + 4, y: sp.top + 11, w: JET_W - 8, h: 9 }, { x: dino.x + 26, y: sp.top + 2, w: 14, h: 10 }];
+  return (sp.duck ? DUCK_HB : STAND_HB).map(([x, y, w, h]) => ({ x: dino.x + x * S, y: sp.top + y * S, w: w * S, h: h * S }));
+}
+function dinoBox() { const sp = dinoSprite(); return { x: dino.x, y: sp.top, w: sp.w, h: sp.h }; }
+function dinoCenter() { const r = dinoBox(); return { x: r.x + r.w / 2, y: r.y + r.h / 2 }; }
+
+function jump() {
+  if (dino.dead || jetMode) return;
+  if (dino.onGround) {
+    dino.vy = JUMP_V; dino.onGround = false; dino.ducking = false; dino.doubleUsed = false;
+    sfx('jump');
+  } else if (effects.boots > 0 && !dino.doubleUsed) {
+    dino.vy = JUMP_V * 0.9; dino.doubleUsed = true;
+    burst(dino.x + 16, GROUND - dino.y, 10, [ITEM_INFO.boots.color, '#ffffff'], 0.5);
+    sfx('double');
+  }
+}
+function bossTarget() {
+  if (!boss || boss.phase === 'dying' || boss.phase === 'leave' || boss.phase === 'prep') return null;
+  const r = bossRect();
+  return { x: r.x + r.w / 2, y: r.y + r.h / 2 };
+}
+function aimDir(ox, oy) {
+  const t = bossTarget();
+  if (t && t.x > ox + 40) { const dx = t.x - ox, dy = t.y - oy, l = Math.hypot(dx, dy); return { dx: dx / l, dy: dy / l }; }
+  return { dx: 1, dy: 0 };
+}
+function trySlash() {
+  if (effects.sword > 0 && dino.slashCD <= 0) { dino.slashT = 0.2; dino.slashCD = 0.32; sfx('slash'); }
+}
+function tryShoot() {
+  if (effects.gun > 0 && dino.shootCD <= 0) {
+    const hand = dinoSprite().hand, ox = hand.x + 12, oy = hand.y - 2;
+    const d = aimDir(ox, oy);
+    bullets.push({ x: ox, y: oy, vx: d.dx * BULLET_SPEED, vy: d.dy * BULLET_SPEED, dmg: 1 });
+    dino.shootCD = 0.22; dino.flashT = 0.06;
+    sfx('shoot');
+  }
+}
+function tryBomb() {
+  if (effects.bomb > 0 && dino.bombCD <= 0) {
+    const hand = dinoSprite().hand, ox = hand.x + 6, oy = hand.y - 4;
+    let vx = 650, vy = -520;
+    const t = bossTarget();
+    if (t && t.x > ox + 60) { const T = 0.75; vx = (t.x - ox) / T; vy = (t.y - oy - 0.5 * BOMB_G * T * T) / T; }
+    bombs.push({ x: ox, y: oy, vx, vy, t: 0 });
+    dino.bombCD = 0.9;
+    sfx('throw');
+  }
+}
+// Một nút A dùng cho mọi vũ khí: vũ khí nào đang cầm thì dùng cái đó
+function attack() { if (jetMode) jetFire(); else { trySlash(); tryShoot(); tryBomb(); } }
+// Máy bay: súng máy đôi bắn thẳng + tên lửa tự dẫn vào boss
+function jetFire() {
+  const sp = dinoSprite();
+  if (dino.shootCD <= 0) {
+    const x = dino.x + JET_W, y = sp.top + 14;
+    bullets.push({ x, y: y - 3, vx: 1100, vy: 0, dmg: 0.6 }, { x: x - 8, y: y + 3, vx: 1100, vy: 0, dmg: 0.6 });
+    dino.shootCD = 0.1; dino.flashT = 0.04;
+    sfx('shoot');
+  }
+  if (dino.bombCD <= 0 && bossTarget()) {
+    bullets.push({ x: dino.x + 30, y: sp.top + 20, vx: 300, vy: 80, dmg: 6, missile: true, t: 0 });
+    dino.bombCD = 1.0;
+    sfx('throw');
+  }
+}
+function laserLine() {
+  const hand = dinoSprite().hand, x0 = hand.x + 14, y0 = hand.y - 3;
+  const d = aimDir(x0, y0);
+  return { x0, y0, x1: x0 + d.dx * 1100, y1: y0 + d.dy * 1100 };
+}
+function slashZone() {
+  const sp = dinoSprite();
+  return { x: dino.x + 26, y: sp.top - 30, w: 82, h: GROUND - sp.top + 34 };
+}
+function damage() {
+  if (dino.invT > 0 || state !== 'running') return;
+  if (lives > 1) {
+    lives--; dino.invT = 1.6; shakeT = 0.3;
+    sfx('hurt');
+    addText(dino.x + 25, GROUND - 70, '-1 MẠNG', '#e91e63', 16);
+    burst(dino.x + 20, GROUND - dino.y - 20, 12, ['#e91e63', 'fg'], 0.6);
+  } else gameOver();
+}
+
+// ================== QUÁI & CHƯỚNG NGẠI ==================
+function makeCactus(x, forceSmall) {
+  const large = !forceSmall && Math.random() < 0.5;
+  const count = 1 + Math.floor(Math.random() * (speed > 520 ? 3 : 2));
+  const parts = [];
+  let dx = 0, maxH = 0;
+  for (let i = 0; i < count; i++) {
+    const tw = large ? 10 : 6, span = large ? 7 : 5, aw = large ? 5 : 4;
+    const h = Math.round(large ? rand(44, 52) : rand(30, 36));
+    parts.push({ dx, tw, span, aw, h, hasL: Math.random() < 0.85, hasR: Math.random() < 0.85,
+                 jl: rand(0.3, 0.5), jr: rand(0.25, 0.45), al: rand(0.25, 0.35), ar: rand(0.25, 0.35) });
+    dx += tw + span * 2 - 2;
+    maxH = Math.max(maxH, h);
+  }
+  return { type: 'cactus', x, y: GROUND - maxH, w: dx + 2, h: maxH, parts, extra: 0, t: 0 };
+}
+function makeBird(x) {
+  const ys = [GROUND - 28, GROUND - 46, GROUND - 95];
+  return { type: 'bird', x, y: ys[Math.floor(Math.random() * 3)], w: 19 * S, h: 12 * S, extra: 0, t: Math.random() };
+}
+function makeScorpion(x) { return { type: 'scorpion', x, y: GROUND - 16, w: 17 * S, h: 8 * S, extra: 110, t: 0 }; }
+function makeSlime(x)    { return { type: 'slime', x, y: GROUND - 18, w: 14 * S, h: 9 * S, extra: 20, t: Math.random() * 2 }; }
+function makeBat(x, baseY = GROUND - 62) { return { type: 'bat', x, y: baseY, baseY, w: 17 * S, h: 8 * S, extra: 60, t: Math.random() * 6 }; }
+function makeBoar(x)  { return { type: 'boar', x, y: GROUND - 18, w: 19 * S, h: 9 * S, extra: 170, t: 0 }; }
+function makeMole(x)  { return { type: 'mole', x, y: GROUND, w: 18, h: 0, extra: 0, t: 0, phase: Math.random() * 1.8, up: 0 }; }
+function makeWasp(x)  { return { type: 'wasp', x, y: GROUND - 60, baseY: GROUND - 60, w: 24, h: 16, extra: 120, t: Math.random() * 6 }; }
+function makeGolem(x) { return { type: 'golem', x, y: GROUND - 56, w: 30, h: 56, extra: 30, t: 0, hp: 3, hitT: 0 }; }
+function makeDrone(x, y) { return { type: 'drone', x, y, w: 20, h: 20, extra: 0, t: 0, vx: -80, vy: 0 }; }
+
+function cactusRects(o) {
+  const out = [];
+  for (const p of o.parts) {
+    const bx = o.x + p.dx, x0 = bx + p.span, top = GROUND - p.h;
+    out.push({ x: x0 + 1, y: top + 1, w: p.tw - 2, h: p.h });
+    const arms = [];
+    if (p.hasL) arms.push(top + p.h * p.jl - p.h * p.al);
+    if (p.hasR) arms.push(top + p.h * p.jr - p.h * p.ar);
+    if (arms.length) {
+      const at = Math.min(...arms) + 2;
+      const ab = Math.max(top + p.h * p.jl, top + p.h * p.jr) + p.aw;
+      out.push({ x: bx + 2, y: at, w: p.tw + p.span * 2 - 4, h: ab - at });
+    }
+  }
+  return out;
+}
+function obstacleRects(o) {
+  switch (o.type) {
+    case 'cactus':   return cactusRects(o);
+    case 'bird':     return BIRD_HB.map(([x, y, w, h]) => ({ x: o.x + x * S, y: o.y + y * S, w: w * S, h: h * S }));
+    case 'scorpion': return [{ x: o.x + 2, y: o.y + 6, w: o.w - 6, h: o.h - 6 }];
+    case 'slime':    return [{ x: o.x + 3, y: o.y + 3, w: o.w - 6, h: o.h - 4 }];
+    case 'bat':      return [{ x: o.x + 4, y: o.y + 4, w: o.w - 8, h: o.h - 8 }];
+    case 'drone':    return [{ x: o.x + 3, y: o.y + 3, w: o.w - 6, h: o.h - 6 }];
+    case 'boar':     return [{ x: o.x + 3, y: o.y + 4, w: o.w - 6, h: o.h - 4 }];
+    case 'mole':     return o.h < 6 ? [] : [{ x: o.x + 3, y: o.y + 2, w: o.w - 6, h: o.h - 2 }];
+    case 'wasp':     return [{ x: o.x + 3, y: o.y + 3, w: o.w - 6, h: o.h - 6 }];
+    case 'golem':    return [{ x: o.x + 3, y: o.y + 4, w: o.w - 6, h: o.h - 4 }];
+  }
+  return [];
+}
+const fullRect = o => ({ x: o.x, y: o.y, w: o.w, h: o.h });
+
+function monsterPool() {
+  const p = score(), pool = [];
+  for (const [type, unlock, base, grow] of MONSTER_TABLE)
+    if (p >= unlock) pool.push([type, Math.min(base * 3, base + grow * (p - unlock) / 1000)]);
+  return pool;
+}
+function spawnObstacle() {
+  let type = pickWeighted(monsterPool());
+  const lastO = obstacles[obstacles.length - 1];
+  const fast = type === 'scorpion' || type === 'boar';
+  if (fast && lastO && W - (lastO.x + lastO.w) < 450) type = 'cactus';  // quái chạy nhanh, tránh dồn sát
+  if (type === 'flock') {                                                // đàn 3 chim nối đuôi
+    for (let i = 0; i < 3; i++) obstacles.push(makeBird(W + 10 + i * rand(210, 260)));
+    gapLeft += 520;
+    return;
+  }
+  const make = { cactus: makeCactus, bird: makeBird, scorpion: makeScorpion, slime: makeSlime, bat: makeBat,
+                 boar: makeBoar, mole: makeMole, wasp: makeWasp, golem: makeGolem }[type];
+  obstacles.push(make(W + 10));
+  if (type === 'scorpion') gapLeft += 150;
+  if (type === 'boar') gapLeft += 220;
+}
+
+// ================== VẬT PHẨM ==================
+// Khoảng cách giữa 2 lần rơi đồ: ngẫu nhiên thật sự — đôi khi rơi sát nhau, đôi khi rất lâu
+function itemDelay(mode) {
+  const close = Math.random() < 0.3;
+  if (mode === 'boss') return close ? rand(2, 4) : rand(6, 12);
+  if (mode === 'jet') return close ? rand(5, 8) : rand(12, 20);
+  return close ? rand(3, 10) : rand(18, 50);
+}
+function canSpawnItem() { return !obstacles.some(o => o.x + o.w > W - 170); }
+function spawnItem(mode) {
+  let kind;
+  let y = Math.random() < 0.5 ? GROUND - 95 : GROUND - 20;
+  if (mode === 'first') kind = pickWeighted([['gun', 1], ['laser', 1], ['bomb', 1]]);
+  else if (mode === 'jet') {                     // đang lái máy bay: chỉ rơi khiên / mạng, ở độ cao bất kỳ
+    kind = pickWeighted([['none', 1], ['shield', 0.3]].concat(lives < MAX_LIVES ? [['heart', 0.7]] : []));
+    if (kind === 'none') return;                 // nhiều lượt không rơi gì để boss bay không quá dễ
+    y = rand(60, GROUND - 40);
+  } else {
+    const entries = [];
+    for (const k in ITEM_INFO) {
+      const info = ITEM_INFO[k];
+      let w = mode === 'boss' ? info.bw : info.w;
+      if (k === 'heart' && lives >= MAX_LIVES) w = 0;
+      if (w > 0) entries.push([k, w]);
+    }
+    kind = pickWeighted(entries);
+  }
+  items.push({ kind, x: W + 30, y, t: Math.random() * 6 });
+  gapLeft = Math.max(gapLeft, 230);
+}
+function collectItem(it, iy) {
+  const info = ITEM_INFO[it.kind];
+  it.dead = true;
+  burst(it.x, iy, 14, [info.color, '#ffffff'], 0.6);
+  if (it.kind === 'plane') {
+    enterJet();
+  } else if (it.kind === 'heart') {
+    lives = Math.min(MAX_LIVES, lives + 1);
+    sfx('heart');
+    addText(it.x, iy - 24, '+1 MẠNG', info.color);
+  } else {
+    // Chỉ cầm 1 vũ khí: nhặt vũ khí mới thì mất vũ khí cũ. Khiên và giày nhảy đôi dùng song song được.
+    if (WEAPONS.includes(it.kind)) for (const k of WEAPONS) effects[k] = 0;
+    let dur = itemDuration();
+    if (it.kind === 'shield' && boss) dur = Math.min(dur, 10);   // khiên khi đánh boss tối đa 10 giây
+    effects[it.kind] = dur; effectsMax[it.kind] = dur;
+    sfx('pickup');
+    addText(it.x, iy - 24, info.name + ' ' + Math.round(dur) + 's', info.color);
+  }
+}
+
+// ================== BOSS ==================
+// Boss xuất hiện ngẫu nhiên (không lặp lại boss vừa đánh), sức mạnh tăng theo cấp độ. Gặp boss bay cao (high) → được lái máy bay chiến đấu.
+const BOSS_DEF = {
+  cactus: { name: 'VUA XƯƠNG RỒNG',    kind: 'ground', w: 84,     h: 130,    homeX: 775, hp: 50 },
+  eagle:  { name: 'ĐẠI BÀNG KHỔNG LỒ', kind: 'low',    w: 19 * 5, h: 12 * 5, homeX: 700, hp: 70 },
+  trex:   { name: 'BẠO CHÚA T-REX',    kind: 'ground', w: 20 * 4, h: 19 * 4, homeX: 770, hp: 100 },
+  dragon: { name: 'RỒNG LỬA',          kind: 'high',   w: 28 * 5, h: 14 * 5, homeX: 690, hp: 220 },
+  ufo:    { name: 'ĐĨA BAY NGOÀI HÀNH TINH', kind: 'high', w: 112, h: 52,   homeX: 700, hp: 280 },
+};
+const BOSS_TYPES = Object.keys(BOSS_DEF);
+const nextBossGap = () => rand(BOSS_GAP_MIN, BOSS_GAP_MAX);
+
+function startBoss() {
+  const choices = BOSS_TYPES.filter(t => t !== lastBossType);
+  const type = choices[Math.floor(Math.random() * choices.length)];
+  lastBossType = type;
+  bossLevel++;
+  const d = BOSS_DEF[type];
+  const hp = Math.round(d.hp * (1 + 0.2 * (bossLevel - 1)));
+  boss = { type, name: d.name, kind: d.kind, w: d.w, h: d.h, homeX: d.homeX, x: W + 30,
+           y: d.kind === 'ground' ? GROUND - d.h : (d.kind === 'low' ? 75 : 90),
+           hp, maxHp: hp, t: 0, atkT: 2.2, phase: 'enter', hitT: 0, timeLeft: BOSS_TIME, queue: [], level: bossLevel,
+           dieT: 0, fxT: 0, firstItem: true, charge: null,
+           power: Math.min(1.8, 1 + 0.08 * (bossLevel - 1)) };      // hệ số mạnh dần theo cấp
+  warnT = 2.8; warnText = '⚠ BOSS: ' + d.name + ' ⚠';
+  sfx('warn');
+  itemTimer = 2.5;
+  if (d.kind === 'high') { boss.phase = 'prep'; boss.prepT = 3; spawnPlane(); }   // 3 giây chuẩn bị, nhặt máy bay
+}
+function spawnPlane() { items.push({ kind: 'plane', x: W + 40, y: GROUND - JET_H / 2, t: 0 }); }
+function enterJet() {
+  jetMode = true;
+  dino.invT = 2; dino.ducking = false; dino.onGround = false; dino.vy = 0; dino.y = Math.max(dino.y, 0);
+  for (const k of WEAPONS) effects[k] = 0;
+  laserOn = false;
+  burst(dino.x + 30, GROUND - dino.y - 15, 24, ['#4fc3f7', '#ffffff', '#78909c'], 0.8);
+  addText(dino.x + 40, GROUND - dino.y - 40, 'LÊN MÁY BAY!', '#0288d1', 16);
+  sfx('jet');
+}
+function exitJet() {
+  if (!jetMode) return;
+  jetMode = false; dino.vy = 0; dino.onGround = dino.y <= 0;
+}
+function bossRect() { const b = boss; return { x: b.x + 8, y: b.y + 8, w: b.w - 16, h: b.h - 16 }; }
+function hurtBoss(d) {
+  if (!boss || (boss.phase !== 'fight' && boss.phase !== 'enter')) return;
+  boss.hp -= d; boss.hitT = 0.08;
+  if (bossHitSndT <= 0) { sfx('bosshit'); bossHitSndT = 0.08; }
+  if (boss.hp <= 0) {
+    boss.hp = 0; boss.phase = 'dying'; boss.dieT = 1.4; boss.queue = []; boss.charge = null;
+    shots = []; shakeT = 0.5;
+    sfx('bossdie');
+  }
+}
+function endBoss(win) {
+  if (win) {
+    const p = 500 * boss.level;
+    bonus += p;
+    addText(W / 2, 110, 'HẠ BOSS! +' + p, '#ffb300', 22);
+    const kind = lives < MAX_LIVES ? 'heart' : pickWeighted(TIMED.map(k => [k, 1]));
+    items.push({ kind, x: Math.min(W - 40, boss.x + boss.w / 2), y: GROUND - 20, t: 0 });
+  }
+  boss = null;
+  exitJet();
+  bossNextAt = score() + nextBossGap();
+  gapLeft = 500;
+  itemTimer = itemDelay('normal');
+}
+function schedule(delay, fn) { boss.queue.push({ d: delay, fn }); }
+function enemyShot(kind, x, y, vx, vy, extra) {
+  shots.push(Object.assign({ kind, x, y, vx, vy, g: 0, w: 12, h: 12, t: 0 }, extra || {}));
+}
+function aimShot(kind, x, y, tx, ty, spd, extra) {
+  const dx = tx - x, dy = ty - y, l = Math.hypot(dx, dy) || 1;
+  enemyShot(kind, x, y, dx / l * spd, dy / l * spd, extra);
+}
+function bossAttack(b) {
+  const r = Math.random(), pw = b.power, lv = b.level;
+  if (b.type === 'cactus') {
+    if (r < 0.5) {                                           // gai bay thấp (nhảy) / cao (cúi)
+      const n = 1 + Math.floor(Math.random() * (2 + Math.min(3, lv / 3)));
+      for (let i = 0; i < n; i++) schedule(i * 0.45 / pw, () => {
+        const low = Math.random() < 0.55;
+        enemyShot('spike', boss.x + 8, low ? GROUND - 10 : GROUND - 31, -(speed + 260 * pw), 0, { w: 18, h: 6 });
+        sfx('spike');
+      });
+    } else if (r < 0.82) {                                   // quả cầu gai lăn
+      for (let i = 0; i < 2 + (lv >= 6 ? 1 : 0); i++) schedule(i * 0.75, () => {
+        enemyShot('ball', boss.x + 8, GROUND - 10, 0, 0, { w: 20, h: 20, rolling: true, rollV: speed + 140 * pw });
+      });
+    } else {                                                 // mọc xương rồng con
+      obstacles.push(makeCactus(W + 10, true), makeCactus(W + 330, true));
+    }
+  } else if (b.type === 'eagle') {
+    if (r < 0.45) {                                          // 3 lông vũ nhắm vào khủng long
+      const mx = b.x + 8, my = b.y + 34;
+      const base = Math.atan2(GROUND - 20 - my, dino.x + 20 - mx);
+      for (const a of [-0.16, 0, 0.16]) enemyShot('feather', mx, my, Math.cos(base + a) * 430 * pw, Math.sin(base + a) * 430 * pw, { w: 12, h: 6 });
+      sfx('spike');
+    } else if (r < 0.78) {                                   // thả trứng lăn
+      for (let i = 0; i < 3 + Math.floor(lv / 5); i++) schedule(i * 0.35, () => {
+        enemyShot('egg', boss.x + 45, boss.y + 50, -rand(200, 320) * pw, -100, { g: 900, w: 14, h: 16, rolls: true });
+      });
+    } else {                                                 // gọi chim con
+      obstacles.push(makeBird(W + 10), makeBird(W + 260));
+    }
+  } else if (b.type === 'trex') {
+    if (r < 0.35) {                                          // dậm chân → sóng xung kích chạy trên mặt đất (nhảy qua)
+      const n = 1 + (lv >= 6 ? 1 : 0);
+      for (let i = 0; i < n; i++) schedule(i * 0.6, () => {
+        enemyShot('wave', boss.x, GROUND - 8, 0, 0, { w: 26, h: 16, rolling: true, rollV: speed + 220 * boss.power });
+        shakeT = Math.max(shakeT, 0.2); sfx('boom');
+      });
+    } else if (r < 0.65) {                                   // ném đá vòng cung, rơi xuống lăn
+      for (let i = 0; i < 2 + (lv >= 6 ? 1 : 0); i++) schedule(i * 0.4, () => {
+        enemyShot('rock', boss.x + 10, boss.y + 20, -rand(250, 380) * boss.power, -rand(200, 350), { g: 900, w: 18, h: 18, rolls: true });
+      });
+    } else {                                                 // gầm lên rồi húc thẳng (nhảy qua đầu nó)
+      b.charge = { phase: 'wind', t: 0.85 / Math.sqrt(pw), hit: false };
+      addText(b.x + b.w / 2, b.y - 12, '!!', '#e53935', 26);
+      sfx('roar');
+    }
+  } else if (b.type === 'dragon') {
+    const mx = b.x + 8, my = b.y + 42, c = dinoCenter();
+    if (r < 0.4) {                                           // loạt cầu lửa toả quạt
+      const n = 3 + (lv >= 6 ? 2 : 0), base = Math.atan2(c.y - my, c.x - mx);
+      for (let i = 0; i < n; i++) {
+        const a = base + (i - (n - 1) / 2) * 0.2;
+        enemyShot('fire', mx, my, Math.cos(a) * 300 * pw, Math.sin(a) * 300 * pw, { w: 14, h: 14 });
+      }
+      sfx('fire');
+    } else if (r < 0.75) {                                   // phun lửa liên tục bám theo máy bay
+      for (let i = 0; i < 6; i++) schedule(i * 0.12, () => {
+        const c2 = dinoCenter();
+        aimShot('fire', boss.x + 8, boss.y + 42, c2.x, c2.y, 380 * boss.power, { w: 14, h: 14 });
+        sfx('fire');
+      });
+    } else {                                                 // gọi đàn dơi
+      for (let i = 0; i < 2 + (lv >= 8 ? 1 : 0); i++) obstacles.push(makeBat(W + 10 + i * 160, rand(60, GROUND - 60)));
+    }
+  } else if (b.type === 'ufo') {
+    const cx = b.x + b.w / 2, cy = b.y + 30;
+    if (r < 0.35) {                                          // vòng đạn toả tròn
+      const n = 10 + Math.min(8, lv), off = Math.random() * Math.PI * 2;
+      for (let i = 0; i < n; i++) {
+        const a = off + i * Math.PI * 2 / n;
+        enemyShot('orb', cx, cy, Math.cos(a) * 210 * pw, Math.sin(a) * 210 * pw, { w: 10, h: 10 });
+      }
+      sfx('spike');
+    } else if (r < 0.7) {                                    // tia laser quét ngang: báo trước rồi bắn (né lên/xuống)
+      const ys = [dinoCenter().y];
+      if (lv >= 7) ys.push(ys[0] + (ys[0] > 140 ? -80 : 80));
+      for (const y of ys) shots.push({ kind: 'beam', x: 0, x1: b.x + 20, y, vx: 0, vy: 0, g: 0, w: 0, h: 12, t: 0,
+                                      warn: 0.9 / Math.sqrt(pw), dur: 0.5, solid: true });
+      sfx('charge');
+    } else {                                                 // thả drone đuổi theo
+      for (let i = 0; i < 2 + (lv >= 8 ? 1 : 0); i++) obstacles.push(makeDrone(b.x + 20 + i * 30, b.y + 35));
+    }
+  }
+}
+function updateBoss(dt) {
+  const b = boss;
+  b.t += dt; b.hitT -= dt;
+  const flyer = b.kind !== 'ground';
+  if (b.phase === 'prep') {                                 // chờ chuẩn bị + lên máy bay rồi boss mới vào
+    b.prepT -= dt;
+    if (!jetMode && !items.some(it => it.kind === 'plane' && !it.dead)) spawnPlane();   // lỡ nhảy qua thì máy bay khác tới
+    if (b.prepT <= 0 && jetMode) b.phase = 'enter';
+  } else if (b.phase === 'enter') {
+    b.x -= 220 * dt;
+    if (b.x <= b.homeX) { b.x = b.homeX; b.phase = 'fight'; b.t = 0; }
+  } else if (b.phase === 'fight') {
+    b.timeLeft -= dt;
+    if (b.type === 'eagle')  { b.x = b.homeX + Math.sin(b.t * 0.7) * 60; b.y = 75 + Math.sin(b.t * 1.6) * 30; }
+    if (b.type === 'dragon') { b.x = b.homeX + Math.sin(b.t * 0.5) * 60; b.y = 90 + Math.sin(b.t * 1.1) * 60; }
+    if (b.type === 'ufo')    { b.x = b.homeX + Math.sin(b.t * 0.6) * 80; b.y = 90 + Math.sin(b.t * 1.3) * 45; }
+    if (b.charge) {                                          // T-Rex húc
+      const c = b.charge;
+      if (c.phase === 'wind') { c.t -= dt; b.x = b.homeX + Math.sin(b.t * 70) * 2; if (c.t <= 0) c.phase = 'dash'; }
+      else if (c.phase === 'dash') {
+        b.x -= Math.min(900, 650 + 30 * b.level) * dt;
+        if (b.x < -b.w - 20) { b.x = W + 20; c.phase = 'return'; }
+      } else if (c.phase === 'return') {
+        b.x -= 220 * dt;
+        if (b.x <= b.homeX) { b.x = b.homeX; b.charge = null; b.atkT = 1; }
+      }
+    } else {
+      for (const q of b.queue) { q.d -= dt; if (q.d <= 0 && !q.done) { q.done = true; q.fn(); } }
+      b.queue = b.queue.filter(q => !q.done);
+      b.atkT -= dt;
+      if (b.atkT <= 0 && b.queue.length === 0) {
+        bossAttack(b);
+        b.atkT = 1.9 * Math.max(0.5, 1 - 0.06 * (b.level - 1)) * (0.6 + 0.4 * b.hp / b.maxHp);
+      }
+    }
+    if (b.timeLeft <= 0 && !b.charge) { b.phase = 'leave'; b.queue = []; addText(W / 2, 110, 'BOSS BỎ CHẠY!', 'dim', 20); }
+  } else if (b.phase === 'leave') {
+    b.x += 260 * dt; if (flyer) b.y -= 60 * dt;
+    if (b.x > W + 60) endBoss(false);
+  } else if (b.phase === 'dying') {
+    b.dieT -= dt; b.fxT -= dt;
+    if (flyer) b.y += 50 * dt;
+    if (b.fxT <= 0) {
+      b.fxT = 0.1;
+      const ex = b.x + Math.random() * b.w, ey = b.y + Math.random() * b.h;
+      booms.push({ x: ex, y: ey, r: 30, life: 0.3, max: 0.3 });
+      burst(ex, ey, 8, ['#ffca28', '#ff7043', 'fg'], 0.8);
+    }
+    if (b.dieT <= 0) endBoss(true);
+  }
+}
+
+// ================== HIỆU ỨNG ==================
+function burst(x, y, n, colors, power = 1) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2, v = rand(80, 320) * power;
+    particles.push({ x, y, vx: Math.cos(a) * v + 60, vy: Math.sin(a) * v - 120, life: rand(0.4, 0.9),
+                     size: Math.random() < 0.5 ? 2 : 4, color: colors[i % colors.length] });
+  }
+}
+function addText(x, y, text, color, size = 14) { texts.push({ x, y, text, color, size, life: 1.1 }); }
+function destroyObstacle(o, how) {
+  if (o.dead) return;
+  if (o.hp > 1 && how !== 'bomb' && how !== 'shield') {
+    if (o.hitT > 0) return;
+    o.hp--; o.hitT = 0.12;
+    burst(o.x + o.w / 2, o.y + o.h / 2, 6, ['#9e9e9e', 'fg'], 0.5);
+    sfx('bosshit');
+    return;
+  }
+  o.dead = true;
+  const cx = o.x + o.w / 2, cy = o.y + o.h / 2;
+  const p = how === 'shield' ? 10 : MONSTER_PTS[o.type];
+  bonus += p;
+  const c2 = { cactus: '#66bb6a', slime: '#9ccc65', golem: '#9e9e9e', mole: '#a1887f', boar: '#8d6e63', wasp: '#fdd835' }[o.type] || '#ffca28';
+  burst(cx, cy, 20, ['fg', c2, ITEM_INFO[how].color]);
+  addText(cx, cy - 28, '+' + p, ITEM_INFO[how].color);
+  if (how === 'shield') { sfx('block'); shakeT = Math.max(shakeT, 0.2); }
+  else if (how !== 'bomb') sfx(o.type === 'cactus' ? 'cut' : 'kill');
+}
+function explode(x, y) {
+  const R = 85;
+  booms.push({ x, y, r: R, life: 0.35, max: 0.35 });
+  burst(x, y, 30, ['#ffca28', '#ff7043', '#e53935', 'fg'], 1.2);
+  shakeT = Math.max(shakeT, 0.25);
+  sfx('boom');
+  for (const o of obstacles) if (!o.dead && circleRect(x, y, R, fullRect(o))) destroyObstacle(o, 'bomb');
+  for (const s of shots) if (!s.solid && circleRect(x, y, R, shotRect(s))) s.dead = true;
+  if (boss && circleRect(x, y, R, bossRect())) hurtBoss(6);
+}
+function shotRect(s) {
+  if (s.kind === 'beam') return s.t >= s.warn ? { x: 0, y: s.y - 6, w: s.x1, h: 12 } : { x: -999, y: -999, w: 0, h: 0 };
+  return { x: s.x - s.w / 2, y: s.y - s.h / 2, w: s.w, h: s.h };
+}
+function gameOver() {
+  state = 'over'; overT = 0; dino.dead = true; shakeT = 0.3; laserOn = false;
+  sfx('die');
+  const s = score();
+  if (s > hiScore) { hiScore = s; try { localStorage.setItem('dino_hi', String(s)); } catch (e) {} }
+}
+
+// ================== CẬP NHẬT ==================
+function update(dt) {
+  time += dt;
+  speed = Math.min(MAX_SPEED, BASE_SPEED + pts() * ACCEL);
+  const move = speed * dt;
+  dist += move;
+  const m = Math.floor(pts() / 100);
+  if (m > lastMilestone) { lastMilestone = m; sfx('point'); }
+  warnT = Math.max(0, warnT - dt);
+  bossHitSndT -= dt;
+
+  // Đếm ngược vật phẩm
+  for (const k of TIMED) {
+    if (effects[k] > 0) {
+      effects[k] -= dt;
+      if (effects[k] <= 0) { effects[k] = 0; sfx('expire'); addText(dino.x + 30, GROUND - 75, 'Hết ' + ITEM_INFO[k].name.toLowerCase(), 'dim'); }
+    }
+  }
+
+  // Di chuyển: máy bay lái tự do, khủng long thì nhảy/cúi
+  if (jetMode) {
+    const v = 340;
+    if (keys.jump) dino.y += v * dt;
+    if (keys.down) dino.y -= v * dt;
+    if (keys.left) dino.x -= v * dt;
+    if (keys.right) dino.x += v * dt;
+    dino.y = Math.max(0, Math.min(GROUND - JET_H - 30, dino.y));
+    dino.x = Math.max(10, Math.min(460, dino.x));
+    dino.ducking = false;
+  } else {
+    const jp = effects.jetpack > 0;
+    dino.thrust = jp && keys.jump;                          // jetpack: giữ ↑ / Space để phụt lửa bay lên
+    dino.ducking = dino.onGround && keys.down && !dino.thrust;
+    if (dino.thrust) {
+      dino.onGround = false;
+      dino.vy += 4600 * dt;
+      thrustSndT -= dt;
+      if (thrustSndT <= 0) { sfx('thrust'); thrustSndT = 0.12; }
+      if (Math.random() < 0.7) particles.push({ x: dino.x + 2 + rand(0, 6), y: GROUND - dino.y - 8, vx: rand(-60, -20), vy: rand(80, 200), life: 0.3, size: 3, color: Math.random() < 0.5 ? '#ff9800' : '#ffeb3b' });
+    }
+    if (!dino.onGround) {
+      let g = GRAVITY;
+      if (jp) { if (!dino.thrust) g *= 0.6; }
+      else if (dino.vy > 0 && !keys.jump) g *= 2.2;
+      if (keys.down) g *= 2.5;
+      dino.vy -= g * dt;
+      if (jp) dino.vy = Math.min(dino.vy, 420);
+      dino.y += dino.vy * dt;
+      if (dino.y > GROUND - 90) { dino.y = GROUND - 90; dino.vy = Math.min(0, dino.vy); }
+      if (dino.y <= 0) { dino.y = 0; dino.vy = 0; dino.onGround = true; }
+    }
+    if (dino.x !== 60) dino.x += Math.sign(60 - dino.x) * Math.min(Math.abs(60 - dino.x), 200 * dt);
+  }
+  dino.runT += dt;
+  dino.slashT = Math.max(0, dino.slashT - dt);
+  dino.slashCD -= dt; dino.shootCD -= dt; dino.bombCD -= dt; dino.flashT -= dt; dino.invT -= dt;
+  if (keys.attack) attack();
+  laserOn = !jetMode && keys.attack && effects.laser > 0;
+  laserSndT -= dt;
+  if (laserOn && laserSndT <= 0) { sfx('laser'); laserSndT = 0.09; }
+
+  // Thông báo quái mới mở khoá
+  if (unlockIdx < MONSTER_TABLE.length && score() >= MONSTER_TABLE[unlockIdx][1]) {
+    addText(W / 2, 95, 'QUÁI MỚI: ' + MONSTER_TABLE[unlockIdx][4], '#e53935', 16);
+    sfx('unlock');
+    unlockIdx++;
+  }
+
+  // Boss
+  if (!boss && !bossPending && score() >= bossNextAt) bossPending = true;
+  if (bossPending && obstacles.length === 0) { bossPending = false; startBoss(); }
+  if (boss) updateBoss(dt);
+
+  // Sinh chướng ngại (tạm ngưng khi có boss)
+  if (!boss && !bossPending) {
+    gapLeft -= move;
+    if (gapLeft <= 0) {
+      spawnObstacle();
+      gapLeft = speed * 0.8 + 170 + Math.random() * (260 + speed * 0.35) * Math.max(0.55, 1 - score() / 12000);
+    }
+  }
+  // Sinh vật phẩm
+  itemTimer -= dt;
+  if (itemTimer <= 0) {
+    if (canSpawnItem()) {
+      if (boss && boss.phase === 'fight') {
+        if (jetMode) { spawnItem('jet'); itemTimer = itemDelay('jet'); }
+        else { spawnItem(boss.firstItem ? 'first' : 'boss'); boss.firstItem = false; itemTimer = itemDelay('boss'); }
+      } else if (!boss) {
+        spawnItem('normal');
+        itemTimer = itemDelay('normal');
+      } else itemTimer = 0.5;
+    } else itemTimer = 0.3;
+  }
+
+  // Thỉnh thoảng rơi thêm cục máu (riêng, không tính vào lượt rơi đồ) khi chưa đầy mạng
+  heartTimer -= dt;
+  if (heartTimer <= 0) {
+    if (lives < MAX_LIVES && canSpawnItem()) {
+      const y = jetMode ? rand(60, GROUND - 40) : (Math.random() < 0.5 ? GROUND - 95 : GROUND - 20);
+      items.push({ kind: 'heart', x: W + 30, y, t: 0 });
+      gapLeft = Math.max(gapLeft, 230);
+      heartTimer = rand(25, 60);
+    } else heartTimer = rand(4, 8);
+  }
+
+  // Di chuyển quái, vật phẩm, đạn
+  for (const o of obstacles) {
+    o.t += dt;
+    if (o.type === 'drone') {                                // drone bám đuổi máy bay
+      const c = dinoCenter(), dx = c.x - (o.x + o.w / 2), dy = c.y - (o.y + o.h / 2), l = Math.hypot(dx, dy) || 1;
+      const sp = 150 * (boss ? boss.power : 1), k = Math.min(1, dt * 1.5);
+      o.vx += (dx / l * sp - o.vx) * k; o.vy += (dy / l * sp - o.vy) * k;
+      o.x += o.vx * dt; o.y += o.vy * dt;
+      if (o.t > 14) { o.dead = true; burst(o.x + 10, o.y + 10, 8, ['#ff1744', 'fg'], 0.5); }
+      continue;
+    }
+    o.x -= move + o.extra * dt;
+    if (o.type === 'slime') o.y = GROUND - o.h - Math.abs(Math.sin(o.t * 3.4)) * 65;
+    if (o.type === 'wasp') o.y = o.baseY + Math.sin(o.t * 6) * 45;
+    if (o.hitT) o.hitT -= dt;
+    if (o.type === 'mole') {                                 // trồi lên khỏi cát rồi thụt xuống theo chu kỳ
+      const c = (o.t + o.phase) % 1.8;
+      const up = c < 0.7 ? 0 : c < 0.9 ? (c - 0.7) / 0.2 : c < 1.5 ? 1 : c < 1.7 ? 1 - (c - 1.5) / 0.2 : 0;
+      o.h = Math.round(up * 44); o.y = GROUND - o.h;
+    }
+    if (o.type === 'bat') o.y = o.baseY + Math.sin(o.t * 3) * 32;
+  }
+  for (const it of items) { it.x -= move; it.t += dt; }
+  for (const b of bullets) {
+    if (b.missile) {                                         // tên lửa tự dẫn
+      b.t += dt;
+      const tg = bossTarget();
+      if (tg) {
+        const dx = tg.x - b.x, dy = tg.y - b.y, l = Math.hypot(dx, dy) || 1, k = Math.min(1, dt * 4);
+        b.vx += (dx / l * 750 - b.vx) * k; b.vy += (dy / l * 750 - b.vy) * k;
+      }
+      if (Math.random() < 0.6) particles.push({ x: b.x - 6, y: b.y, vx: rand(-40, 0), vy: rand(-20, 20), life: 0.3, size: 2, color: Math.random() < 0.5 ? '#bdbdbd' : '#ff9800' });
+    }
+    b.x += b.vx * dt; b.y += b.vy * dt;
+  }
+  for (const b of bombs) { b.t += dt; b.vy += BOMB_G * dt; b.x += b.vx * dt; b.y += b.vy * dt; }
+  for (const s of shots) {
+    s.t += dt;
+    if (s.kind === 'beam') {
+      s.x1 = boss ? boss.x + 20 : W;
+      if (!s.fired && s.t >= s.warn) { s.fired = true; sfx('beam'); shakeT = Math.max(shakeT, 0.15); }
+      if (s.t > s.warn + s.dur || !boss) s.dead = true;
+      continue;
+    }
+    if (s.rolling) s.x -= (s.rollV || speed + 40) * dt;
+    else {
+      s.vy += s.g * dt; s.x += s.vx * dt; s.y += s.vy * dt;
+      if (s.y + s.h / 2 >= GROUND) {
+        if (s.rolls) { s.rolling = true; s.y = GROUND - s.h / 2; }
+        else { s.dead = true; burst(s.x, GROUND - 4, 5, ['fg', '#ff7043'], 0.4); }
+      }
+    }
+    if (s.kind === 'fire' && Math.random() < 0.35) particles.push({ x: s.x, y: s.y, vx: rand(20, 80), vy: rand(-60, 0), life: 0.3, size: 2, color: Math.random() < 0.5 ? '#ffca28' : '#ff7043' });
+    if (s.x < -40 || s.x > W + 80 || s.y < -80) s.dead = true;
+  }
+
+  // Kiếm: chém mọi quái trước mặt, đánh bật đạn của boss
+  if (dino.slashT > 0) {
+    const zone = slashZone();
+    for (const o of obstacles) if (!o.dead && obstacleRects(o).some(r => overlap(r, zone))) destroyObstacle(o, 'sword');
+    for (const s of shots) {
+      if (!s.dead && !s.solid && overlap(shotRect(s), zone)) {
+        s.dead = true;
+        sfx('deflect');
+        burst(s.x, s.y, 6, ['#ffffff', ITEM_INFO.sword.color], 0.5);
+        const d = aimDir(s.x, s.y);
+        bullets.push({ x: s.x, y: s.y, vx: d.dx * 900, vy: d.dy * 900, dmg: 3, reflected: true });
+      }
+    }
+  }
+
+  // Laser
+  if (laserOn) {
+    const L = laserLine();
+    for (const o of obstacles) if (!o.dead && obstacleRects(o).some(r => segRect(L, r))) destroyObstacle(o, 'laser');
+    for (const s of shots) if (!s.dead && !s.solid && segRect(L, shotRect(s))) { s.dead = true; burst(s.x, s.y, 4, ['#00e5ff', '#ffffff'], 0.4); }
+    if (boss && segRect(L, bossRect())) hurtBoss(10 * dt);
+  }
+
+  // Đạn của người chơi
+  for (const b of bullets) {
+    const br = b.missile ? { x: b.x - 8, y: b.y - 6, w: 16, h: 12 } : { x: b.x - 6, y: b.y - 8, w: 14, h: 16 };
+    for (const o of obstacles) {
+      if (o.dead || b.dead) continue;
+      if (o.type !== 'cactus' && overlap(br, fullRect(o))) { b.dead = true; destroyObstacle(o, 'gun'); }
+      else if (o.type === 'cactus' && !b.reflected && cactusRects(o).some(r => overlap({ x: b.x, y: b.y - 2, w: 8, h: 4 }, r))) {
+        b.dead = true; burst(b.x, b.y, 5, ['#ffca28', 'fg'], 0.5);
+      }
+    }
+    if (!b.dead && boss && overlap(br, bossRect())) {
+      b.dead = true; hurtBoss(b.dmg);
+      if (b.missile) { booms.push({ x: b.x, y: b.y, r: 28, life: 0.25, max: 0.25 }); sfx('boom'); }
+      burst(b.x, b.y, b.missile ? 10 : 4, ['#ffca28', '#ffffff', '#ff7043'], 0.4);
+    }
+    if (b.x > W + 20 || b.x < -20 || b.y < -20 || b.y > H || (b.missile && b.t > 4)) b.dead = true;
+  }
+
+  // Bom
+  for (const b of bombs) {
+    const r = { x: b.x - 6, y: b.y - 6, w: 12, h: 12 };
+    const hit = b.y >= GROUND - 6 || obstacles.some(o => !o.dead && overlap(r, fullRect(o))) || (boss && overlap(r, bossRect()));
+    if (hit) { b.dead = true; explode(b.x, Math.min(b.y, GROUND - 10)); }
+    else if (b.x > W + 30) b.dead = true;
+  }
+
+  // Nhặt vật phẩm
+  const box = dinoBox();
+  for (const it of items) {
+    if (it.dead) continue;
+    if (it.kind === 'plane') {                               // máy bay đỗ dưới đất: chạy chạm vào để lên
+      if (!jetMode && overlap(box, { x: it.x - JET_W / 2, y: it.y - JET_H / 2, w: JET_W, h: JET_H })) collectItem(it, it.y);
+      continue;
+    }
+    const iy = it.y + Math.sin(it.t * 4) * 4;
+    if (overlap(box, { x: it.x - 14, y: iy - 14, w: 28, h: 28 })) collectItem(it, iy);
+  }
+
+  // Va chạm với quái / đạn boss / T-Rex húc
+  const dr = dinoRects();
+  for (const o of obstacles) {
+    if (o.dead || state !== 'running') continue;
+    if (!obstacleRects(o).some(r => dr.some(d => overlap(d, r)))) continue;
+    if (effects.shield > 0) destroyObstacle(o, 'shield');
+    else damage();
+  }
+  for (const s of shots) {
+    if (s.dead || state !== 'running') continue;
+    const sr = shotRect(s);
+    if (!dr.some(d => overlap(d, sr))) continue;
+    if (s.solid) { if (effects.shield <= 0) damage(); continue; }
+    if (effects.shield > 0) { s.dead = true; sfx('block'); burst(s.x, s.y, 8, [ITEM_INFO.shield.color, '#ffffff'], 0.6); }
+    else { s.dead = true; damage(); }
+  }
+  if (boss && boss.charge && boss.charge.phase === 'dash' && !boss.charge.hit && state === 'running') {
+    const br = bossRect();
+    if (dr.some(d => overlap(d, br))) {
+      boss.charge.hit = true;
+      if (effects.shield > 0) { sfx('block'); hurtBoss(5); shakeT = 0.3; }
+      else damage();
+    }
+  }
+
+  obstacles = obstacles.filter(o => !o.dead && o.x + o.w > -20);
+  items = items.filter(it => !it.dead && it.x > -40);
+  bullets = bullets.filter(b => !b.dead);
+  bombs = bombs.filter(b => !b.dead);
+  shots = shots.filter(s => !s.dead);
+}
+
+function updateCosmetic(dt) {
+  if (state === 'running') {
+    for (const c of clouds) {
+      c.x -= speed * 0.12 * dt;
+      if (c.x < -60) { c.x = W + rand(0, 200); c.y = rand(35, 110); }
+    }
+    for (const p of pebbles) {
+      p.x -= speed * dt;
+      if (p.x < -5) { p.x = W + rand(0, 20); p.y = GROUND + 2 + Math.random() * 12; }
+    }
+  }
+  for (const p of particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 900 * dt; p.life -= dt; }
+  particles = particles.filter(p => p.life > 0 && p.y < H + 10);
+  for (const t of texts) { t.y -= 40 * dt; t.life -= dt; }
+  texts = texts.filter(t => t.life > 0);
+  for (const b of booms) b.life -= dt;
+  booms = booms.filter(b => b.life > 0);
+  shakeT = Math.max(0, shakeT - dt);
+  if (state === 'over') overT += dt;
+  const target = (Math.floor(pts() / 700) % 2 === 1) ? 1 : 0;
+  nightT += Math.sign(target - nightT) * Math.min(Math.abs(target - nightT), dt * 0.8);
+}
+
+// ================== VẼ ==================
+const COL = {};
+function hex(c) { return [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16)); }
+function mix(a, b, t) { const A = hex(a), B = hex(b); return 'rgb(' + A.map((v, i) => Math.round(v + (B[i] - v) * t)).join(',') + ')'; }
+const color = c => c === 'fg' ? COL.fg : c === 'dim' ? COL.dim : c;
+
+// flipW > 0: lật ngang sprite (rộng flipW ô) để quay mặt sang trái
+function drawSprite(rows, x, y, sc, pal, flipW = 0) {
+  let eye = null, cur = null;
+  for (let r = 0; r < rows.length; r++) {
+    const row = rows[r];
+    for (let c = 0; c < row.length; c++) {
+      const ch = row[c];
+      if (ch === ' ') continue;
+      const col = pal[ch];
+      if (!col) continue;
+      if (col !== cur) { ctx.fillStyle = col; cur = col; }
+      const px = flipW ? x + (flipW - 1 - c) * sc : x + c * sc;
+      ctx.fillRect(px, y + r * sc, sc, sc);
+      if (ch === '.' && !eye) eye = { x: px, y: y + r * sc };
+    }
+  }
+  return eye;
+}
+const basePal = () => ({ '#': COL.fg, '.': COL.bg, 'r': '#e53935' });
+
+function heartPath() {
+  ctx.beginPath(); ctx.moveTo(0, 10);
+  ctx.bezierCurveTo(-14, 0, -10, -12, 0, -5);
+  ctx.bezierCurveTo(10, -12, 14, 0, 0, 10);
+  ctx.closePath();
+}
+function circle(x, y, r) { ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); }
+
+function drawIcon(kind, cx, cy, s, rot = 0) {
+  ctx.save();
+  ctx.translate(cx, cy); ctx.rotate(rot); ctx.scale(s, s);
+  if (kind === 'sword') {
+    ctx.fillStyle = '#e0e6ea'; ctx.fillRect(-2, -11, 4, 14);
+    ctx.beginPath(); ctx.moveTo(-2, -11); ctx.lineTo(0, -15); ctx.lineTo(2, -11); ctx.fill();
+    ctx.fillStyle = '#90a4ae'; ctx.fillRect(0, -11, 2, 14);
+    ctx.fillStyle = '#f9a825'; ctx.fillRect(-6, 3, 12, 3);
+    ctx.fillStyle = '#6d4c41'; ctx.fillRect(-1.5, 6, 3, 6);
+    ctx.fillStyle = '#f9a825'; ctx.fillRect(-2.5, 12, 5, 2.5);
+  } else if (kind === 'gun') {
+    ctx.fillStyle = '#455a64'; ctx.fillRect(-10, -6, 21, 6);
+    ctx.fillStyle = '#263238'; ctx.fillRect(9, -8, 2, 2); ctx.fillRect(-10, -1, 21, 1);
+    ctx.fillStyle = '#ff7043'; ctx.fillRect(-10, -6, 5, 2);
+    ctx.fillStyle = '#6d4c41';
+    ctx.beginPath(); ctx.moveTo(-9, 0); ctx.lineTo(-3, 0); ctx.lineTo(-1, 10); ctx.lineTo(-7, 10); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#455a64'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(1, 1, 3, 0, Math.PI); ctx.stroke();
+  } else if (kind === 'shield') {
+    ctx.beginPath();
+    ctx.moveTo(0, -12); ctx.quadraticCurveTo(6, -9, 10, -9); ctx.lineTo(10, -1);
+    ctx.quadraticCurveTo(9, 8, 0, 13); ctx.quadraticCurveTo(-9, 8, -10, -1); ctx.lineTo(-10, -9);
+    ctx.quadraticCurveTo(-6, -9, 0, -12); ctx.closePath();
+    ctx.fillStyle = '#1e88e5'; ctx.fill();
+    ctx.strokeStyle = '#0d47a1'; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.fillStyle = '#ffd54f'; ctx.fillRect(-1.5, -8, 3, 16); ctx.fillRect(-6, -3, 12, 3);
+  } else if (kind === 'bomb') {
+    ctx.fillStyle = '#37474f'; circle(-1, 2, 9);
+    ctx.fillStyle = '#90a4ae'; circle(-4, -1, 2.5);
+    ctx.fillStyle = '#546e7a'; ctx.fillRect(2, -9, 5, 4);
+    ctx.strokeStyle = '#8d6e63'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(5, -9); ctx.quadraticCurveTo(7, -13, 10, -12); ctx.stroke();
+    ctx.fillStyle = '#ffca28'; circle(10.5, -12.5, 2.6);
+    ctx.fillStyle = '#ff5722'; circle(10.5, -12.5, 1.2);
+  } else if (kind === 'laser') {
+    ctx.fillStyle = '#006064'; ctx.fillRect(-10, -6, 17, 9);
+    ctx.fillStyle = '#00bcd4'; ctx.fillRect(-9, -5, 15, 7);
+    ctx.fillStyle = '#006064'; ctx.fillRect(-4, -6, 1.5, 9); ctx.fillRect(0, -6, 1.5, 9);
+    ctx.fillStyle = '#b2ebf2'; ctx.fillRect(6, -4, 4, 5);
+    ctx.fillStyle = '#00e5ff'; ctx.fillRect(10, -3, 3, 3);
+    ctx.fillStyle = '#455a64';
+    ctx.beginPath(); ctx.moveTo(-8, 3); ctx.lineTo(-3, 3); ctx.lineTo(-2, 10); ctx.lineTo(-7, 10); ctx.closePath(); ctx.fill();
+  } else if (kind === 'boots') {
+    ctx.fillStyle = '#43a047';
+    ctx.beginPath(); ctx.moveTo(-5, -10); ctx.lineTo(2, -10); ctx.lineTo(2, 1); ctx.lineTo(10, 3); ctx.lineTo(10, 8); ctx.lineTo(-5, 8); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#1b5e20'; ctx.fillRect(-5, 7, 15, 3); ctx.fillRect(-5, -10, 7, 2);
+    ctx.fillStyle = '#ffffff'; ctx.strokeStyle = '#90a4ae'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(-5, -6); ctx.lineTo(-13, -11); ctx.lineTo(-11, -6); ctx.lineTo(-14, -3); ctx.lineTo(-5, -1); ctx.closePath(); ctx.fill(); ctx.stroke();
+  } else if (kind === 'jetpack') {
+    ctx.fillStyle = '#90a4ae'; ctx.fillRect(-8, -8, 7, 14); ctx.fillRect(1, -8, 7, 14);
+    ctx.fillStyle = '#e53935'; ctx.fillRect(-8, -11, 7, 3); ctx.fillRect(1, -11, 7, 3);
+    ctx.fillStyle = '#546e7a'; ctx.fillRect(-1, -5, 2, 8);
+    ctx.fillStyle = '#ff9800';
+    for (const fx of [-4.5, 4.5]) { ctx.beginPath(); ctx.moveTo(fx - 3, 6); ctx.lineTo(fx + 3, 6); ctx.lineTo(fx, 13); ctx.closePath(); ctx.fill(); }
+  } else if (kind === 'heart') {
+    heartPath(); ctx.fillStyle = '#e91e63'; ctx.fill();
+    ctx.fillStyle = '#f8bbd0'; ctx.fillRect(-6, -5, 3, 3);
+  }
+  ctx.restore();
+}
+
+function drawCactus(o) {
+  ctx.fillStyle = COL.fg;
+  for (const p of o.parts) {
+    const bx = Math.round(o.x + p.dx), x0 = bx + p.span, top = GROUND - p.h;
+    ctx.fillRect(x0, top + 2, p.tw, p.h - 2);
+    ctx.fillRect(x0 + 1, top, p.tw - 2, 2);
+    if (p.hasL) {
+      const jy = Math.round(top + p.h * p.jl), ah = Math.round(p.h * p.al);
+      ctx.fillRect(bx, jy, p.span + 1, p.aw);
+      ctx.fillRect(bx, jy - ah + 1, p.aw, ah);
+      ctx.fillRect(bx + 1, jy - ah, p.aw - 2, 1);
+    }
+    if (p.hasR) {
+      const jy = Math.round(top + p.h * p.jr), ah = Math.round(p.h * p.ar), rx = x0 + p.tw + p.span - p.aw;
+      ctx.fillRect(x0 + p.tw - 1, jy, p.span + 1, p.aw);
+      ctx.fillRect(rx, jy - ah + 1, p.aw, ah);
+      ctx.fillRect(rx + 1, jy - ah, p.aw - 2, 1);
+    }
+  }
+}
+function drawObstacle(o) {
+  const x = Math.round(o.x), y = Math.round(o.y), f = Math.floor(o.t * 6) % 2;
+  switch (o.type) {
+    case 'cactus':   drawCactus(o); break;
+    case 'bird':     drawSprite(Math.floor(time * 5.5 + o.t) % 2 ? BIRD_A : BIRD_B, x, y, S, basePal()); break;
+    case 'scorpion': drawSprite(Math.floor(o.t * 10) % 2 ? SCORP_A : SCORP_B, x, y, S, { '#': '#8d6e63', '.': COL.bg }); break;
+    case 'slime':    drawSprite(SLIME_A, x, y, S, { '#': '#7cb342', '.': '#ffffff', 'r': '#212121' }); break;
+    case 'bat':      drawSprite(f ? BAT_A : BAT_B, x, y, S, { '#': '#5e35b1', 'r': '#ffeb3b' }); break;
+    case 'boar':     drawSprite(Math.floor(o.t * 12) % 2 ? BOAR_A : BOAR_B, x, y, S, { '#': '#6d4c41', 'w': '#fff8e1', '.': '#ff1744' }); break;
+    case 'mole': {
+      ctx.fillStyle = '#a1887f';
+      ctx.beginPath(); ctx.ellipse(x + 9, GROUND - 1, 15, 6, 0, Math.PI, 0); ctx.fill();
+      if (o.h > 0) {
+        ctx.fillStyle = '#d7a86e'; ctx.fillRect(x + 2, y + 4, 14, o.h - 4);
+        ctx.beginPath(); ctx.arc(x + 9, y + 6, 7, Math.PI, 0); ctx.fill();
+        ctx.fillStyle = '#8d6e63'; for (let i = 12; i < o.h; i += 7) ctx.fillRect(x + 2, y + i, 14, 2);
+        if (o.h > 14) {
+          ctx.fillStyle = '#ff1744'; ctx.fillRect(x + 4, y + 4, 3, 3); ctx.fillRect(x + 11, y + 4, 3, 3);
+          ctx.fillStyle = '#3e2723'; ctx.fillRect(x + 5, y + 10, 8, 3);
+        }
+      }
+      break;
+    }
+    case 'wasp': {
+      const wing = Math.floor(time * 30) % 2;
+      ctx.fillStyle = 'rgba(255,255,255,0.85)';
+      ctx.beginPath(); ctx.ellipse(x + 13, y + (wing ? 1 : 4), 5, wing ? 6 : 3, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#fdd835'; ctx.beginPath(); ctx.ellipse(x + 13, y + 10, 11, 6, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#212121'; ctx.fillRect(x + 10, y + 4, 3, 12); ctx.fillRect(x + 16, y + 5, 3, 10);
+      ctx.beginPath(); ctx.moveTo(x + 23, y + 9); ctx.lineTo(x + 28, y + 10); ctx.lineTo(x + 23, y + 12); ctx.fill();
+      ctx.fillStyle = '#212121'; circle(x + 4, y + 9, 3.5);
+      ctx.fillStyle = '#ff1744'; ctx.fillRect(x + 2, y + 7, 2, 2);
+      break;
+    }
+    case 'golem': {
+      const hit = o.hitT > 0, step = Math.floor(o.t * 5) % 2;
+      const c1 = hit ? '#ff8a80' : '#757575', c2 = hit ? '#ff5252' : '#9e9e9e';
+      ctx.fillStyle = c1; ctx.fillRect(x + 4, y + 40 + (step ? 0 : 2), 9, 16 - (step ? 0 : 2)); ctx.fillRect(x + 17, y + 40 + (step ? 2 : 0), 9, 16 - (step ? 2 : 0));
+      ctx.fillStyle = c2; ctx.fillRect(x + 2, y + 16, 26, 26);
+      ctx.fillStyle = c1; ctx.fillRect(x - 3, y + 18, 6, 18); ctx.fillRect(x + 27, y + 18, 6, 18);
+      ctx.fillStyle = c2; ctx.fillRect(x + 6, y, 18, 16);
+      ctx.fillStyle = '#ff6f00'; ctx.fillRect(x + 8, y + 6, 4, 3); ctx.fillRect(x + 16, y + 6, 4, 3);
+      ctx.fillStyle = '#616161'; ctx.fillRect(x + 8, y + 24, 6, 4); ctx.fillRect(x + 17, y + 30, 5, 3);
+      for (let i = 0; i < o.hp; i++) { ctx.fillStyle = '#e53935'; ctx.fillRect(x + 6 + i * 7, y - 6, 5, 3); }
+      break;
+    }
+    case 'drone':
+      ctx.fillStyle = '#546e7a'; circle(x + 10, y + 10, 9);
+      ctx.fillStyle = '#90a4ae'; ctx.fillRect(x - 2, y + 8, 24, 3);
+      ctx.fillStyle = f ? '#ff1744' : '#ff8a80'; circle(x + 7, y + 10, 3.5);
+      break;
+  }
+}
+
+function drawCloud(x, y) {
+  ctx.fillStyle = COL.cloud;
+  x = Math.round(x); y = Math.round(y);
+  ctx.fillRect(x + 14, y, 18, 4);
+  ctx.fillRect(x + 8, y + 4, 30, 4);
+  ctx.fillRect(x, y + 8, 46, 6);
+}
+
+function drawShieldBubble(sp, front) {
+  const cx = dino.x + sp.w / 2, cy = sp.top + sp.h / 2;
+  const r = 30 + Math.sin(time * 8) * 2;
+  const rx = r + (sp.duck ? 8 : 0), ry = r - (sp.duck ? 6 : 0);
+  ctx.save();
+  if (!front) {
+    ctx.globalAlpha = 0.18; ctx.fillStyle = ITEM_INFO.shield.color;
+    ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); ctx.fill();
+  } else {
+    ctx.strokeStyle = ITEM_INFO.shield.color; ctx.lineWidth = 2; ctx.globalAlpha = 0.85;
+    ctx.setLineDash([6, 4]); ctx.lineDashOffset = -time * 30;
+    ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); ctx.stroke();
+  }
+  ctx.restore();
+}
+const fading = k => effects[k] < 3 && Math.floor(time * 8) % 2 === 0;
+
+function drawDino() {
+  const sp = dinoSprite();
+  const shieldOn = effects.shield > 0 && !fading('shield');
+  ctx.save();
+  if (dino.invT > 0 && Math.floor(time * 14) % 2 === 0) ctx.globalAlpha = 0.3;
+  if (shieldOn) drawShieldBubble(sp, false);
+
+  if (sp.jet) {                                              // máy bay chiến đấu
+    const fl = 8 + Math.random() * 8, fy = sp.top + 13;
+    ctx.fillStyle = '#ff9800';
+    ctx.beginPath(); ctx.moveTo(dino.x + 2, fy - 4); ctx.lineTo(dino.x - fl, fy); ctx.lineTo(dino.x + 2, fy + 4); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#ffeb3b'; ctx.fillRect(dino.x - fl / 2, fy - 1, fl / 2 + 2, 2);
+    drawSprite(JET, dino.x, sp.top, S, { '#': '#78909c', 'd': '#455a64', 'c': '#4fc3f7', 'r': '#e53935', 'y': '#ffca28', 'k': COL.fg, '.': COL.bg });
+    if (dino.flashT > 0) { ctx.fillStyle = '#ffca28'; circle(dino.x + JET_W + 2, sp.top + 13, 5); }
+    if (shieldOn) drawShieldBubble(sp, true);
+    ctx.restore();
+    return;
+  }
+
+  const eye = drawSprite(sp.rows, dino.x, sp.top, S, { '#': COL.fg, '.': COL.bg });
+  if (dino.dead && eye) {
+    ctx.fillStyle = COL.bg; ctx.fillRect(eye.x - S, eye.y - S, S * 3, S * 3);
+    ctx.fillStyle = COL.fg; ctx.fillRect(eye.x, eye.y, S, S);
+  }
+  // Giày: tô xanh 2 hàng chân cuối
+  if (effects.boots > 0 && !fading('boots')) {
+    const n = sp.rows.length;
+    drawSprite(['', ''].concat(sp.rows.slice(n - 2)), dino.x, sp.top + (n - 4) * S, S, { '#': ITEM_INFO.boots.color });
+  }
+  // Kiếm
+  if (effects.sword > 0) {
+    let ang = 0.6;
+    if (dino.slashT > 0) {
+      const p = 1 - dino.slashT / 0.2;
+      ang = -1.0 + p * 3.0;
+      ctx.save();
+      ctx.strokeStyle = ITEM_INFO.sword.color; ctx.globalAlpha = 0.55 * (1 - p * 0.5);
+      ctx.lineWidth = 7; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.arc(sp.hand.x, sp.hand.y, 28, -1.0 - Math.PI / 2, ang - Math.PI / 2); ctx.stroke();
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.globalAlpha = 0.8 * (1 - p);
+      ctx.beginPath(); ctx.arc(sp.hand.x, sp.hand.y, 30, -1.0 - Math.PI / 2, ang - Math.PI / 2); ctx.stroke();
+      ctx.restore();
+    }
+    if (!fading('sword')) {
+      ctx.save(); ctx.translate(sp.hand.x, sp.hand.y); ctx.rotate(ang);
+      drawIcon('sword', 0, -8, 0.9);
+      ctx.restore();
+    }
+  }
+  if (effects.jetpack > 0 && !fading('jetpack')) {
+    const jx = dino.x - 6, jy = sp.top + (sp.duck ? 2 : 12);
+    ctx.fillStyle = '#90a4ae'; ctx.fillRect(jx, jy, 5, 13); ctx.fillRect(jx + 6, jy, 5, 13);
+    ctx.fillStyle = '#e53935'; ctx.fillRect(jx, jy - 2, 5, 3); ctx.fillRect(jx + 6, jy - 2, 5, 3);
+    if (dino.thrust) {
+      const fl = 8 + Math.random() * 8;
+      ctx.fillStyle = '#ff9800';
+      for (const fx of [jx + 2.5, jx + 8.5]) { ctx.beginPath(); ctx.moveTo(fx - 3, jy + 13); ctx.lineTo(fx + 3, jy + 13); ctx.lineTo(fx, jy + 13 + fl); ctx.closePath(); ctx.fill(); }
+    }
+  }
+  if (effects.bomb > 0 && !fading('bomb')) drawIcon('bomb', dino.x + 6, sp.top + 14, 0.5);
+  if (effects.laser > 0 && !fading('laser')) drawIcon('laser', sp.hand.x + 6, sp.hand.y - 6, 0.55);
+  if (effects.gun > 0 && !fading('gun')) drawIcon('gun', sp.hand.x + 5, sp.hand.y + 1, 0.6);
+  if (dino.flashT > 0) { ctx.fillStyle = '#ffca28'; circle(sp.hand.x + 13, sp.hand.y - 1, 5); }
+  if (shieldOn) drawShieldBubble(sp, true);
+  ctx.restore();
+}
+
+function drawLaser() {
+  const L = laserLine();
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.shadowColor = '#00e5ff'; ctx.shadowBlur = 14;
+  ctx.strokeStyle = 'rgba(0,229,255,0.75)'; ctx.lineWidth = 6 + Math.sin(time * 60) * 1.5;
+  ctx.beginPath(); ctx.moveTo(L.x0, L.y0); ctx.lineTo(L.x1, L.y1); ctx.stroke();
+  ctx.shadowBlur = 0; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(L.x0, L.y0); ctx.lineTo(L.x1, L.y1); ctx.stroke();
+  ctx.restore();
+}
+
+function drawItem(it) {
+  if (it.kind === 'plane') {
+    const px = Math.round(it.x - JET_W / 2), py = Math.round(it.y - JET_H / 2);
+    drawSprite(JET, px, py, S, { '#': '#78909c', 'd': '#455a64', 'c': '#4fc3f7', 'r': '#e53935', 'y': '#ffca28', 'k': '#4fc3f7', '.': '#4fc3f7' });
+    const ay = py - 18 + Math.sin(time * 8) * 4;               // mũi tên nhấp nháy chỉ vào máy bay
+    ctx.fillStyle = '#0288d1';
+    ctx.beginPath(); ctx.moveTo(it.x - 8, ay); ctx.lineTo(it.x + 8, ay); ctx.lineTo(it.x, ay + 10); ctx.closePath(); ctx.fill();
+    return;
+  }
+  const y = it.y + Math.sin(it.t * 4) * 4;
+  const info = ITEM_INFO[it.kind];
+  ctx.save();
+  ctx.shadowColor = info.color; ctx.shadowBlur = 12;
+  ctx.fillStyle = COL.bg; ctx.strokeStyle = info.color; ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.arc(it.x, y, 16, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.restore();
+  drawIcon(it.kind, it.x, y, 0.8, it.kind === 'sword' ? Math.PI / 4 : 0);
+}
+
+function drawShot(s) {
+  const x = Math.round(s.x), y = Math.round(s.y);
+  ctx.save();
+  ctx.translate(x, y);
+  switch (s.kind) {
+    case 'feather':
+      ctx.rotate(Math.atan2(s.vy, s.vx));
+      ctx.fillStyle = '#6d4c41'; ctx.fillRect(-8, -2, 16, 4);
+      ctx.fillStyle = '#a1887f'; ctx.fillRect(-8, -1, 7, 2);
+      ctx.fillStyle = '#3e2723'; ctx.fillRect(6, -1, 4, 2);
+      break;
+    case 'egg':
+      if (s.rolling) ctx.rotate(-s.t * 10);
+      ctx.fillStyle = '#fff8e1'; ctx.beginPath(); ctx.ellipse(0, 0, 6, 8, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = COL.fg; ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.fillStyle = '#8d6e63'; ctx.fillRect(-2, -3, 2, 2); ctx.fillRect(2, 2, 2, 2);
+      break;
+    case 'spike':
+      ctx.fillStyle = '#2e7d32';
+      ctx.beginPath(); ctx.moveTo(-10, 0); ctx.lineTo(8, -3); ctx.lineTo(8, 3); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#a5d6a7'; ctx.fillRect(3, -1, 6, 2);
+      break;
+    case 'ball':
+      ctx.rotate(-s.t * 12);
+      ctx.strokeStyle = '#1b5e20'; ctx.lineWidth = 2;
+      for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4; ctx.beginPath(); ctx.moveTo(Math.cos(a) * 7, Math.sin(a) * 7); ctx.lineTo(Math.cos(a) * 12, Math.sin(a) * 12); ctx.stroke(); }
+      ctx.fillStyle = '#388e3c'; circle(0, 0, 8.5);
+      ctx.fillStyle = '#81c784'; ctx.fillRect(-4, -4, 3, 3);
+      break;
+    case 'fire': {
+      const r = 7 + Math.sin(s.t * 30) * 1.2;
+      ctx.fillStyle = '#e65100'; circle(0, 0, r + 1);
+      ctx.fillStyle = '#ff9800'; circle(0, 0, r * 0.75);
+      ctx.fillStyle = '#ffeb3b'; circle(-1, -1, r * 0.4);
+      break;
+    }
+    case 'wave':
+      ctx.fillStyle = '#8d6e63';
+      ctx.beginPath(); ctx.ellipse(0, 8, 14, 16, 0, Math.PI, 0); ctx.fill();
+      ctx.fillStyle = '#d7ccc8';
+      ctx.beginPath(); ctx.ellipse(-2, 8, 7, 9, 0, Math.PI, 0); ctx.fill();
+      break;
+    case 'rock':
+      ctx.rotate(-s.t * 8);
+      ctx.fillStyle = '#757575'; circle(0, 0, 9);
+      ctx.fillStyle = '#424242'; ctx.fillRect(-4, -3, 3, 3); ctx.fillRect(2, 2, 4, 3);
+      ctx.fillStyle = '#bdbdbd'; ctx.fillRect(-2, -6, 3, 2);
+      break;
+    case 'orb':
+      ctx.fillStyle = 'rgba(224,64,251,0.35)'; circle(0, 0, 8);
+      ctx.fillStyle = '#e040fb'; circle(0, 0, 5);
+      ctx.fillStyle = '#ffffff'; circle(-1, -1, 2);
+      break;
+    case 'beam':
+      ctx.restore(); ctx.save();
+      if (s.t < s.warn) {                                    // vạch báo trước
+        ctx.globalAlpha = Math.floor(s.t * 12) % 2 ? 0.9 : 0.35;
+        ctx.strokeStyle = '#ff1744'; ctx.lineWidth = 2; ctx.setLineDash([10, 6]);
+        ctx.beginPath(); ctx.moveTo(0, s.y); ctx.lineTo(s.x1, s.y); ctx.stroke();
+      } else {
+        ctx.shadowColor = '#e040fb'; ctx.shadowBlur = 16;
+        ctx.fillStyle = 'rgba(224,64,251,0.8)'; ctx.fillRect(0, s.y - 7 + Math.sin(s.t * 80), s.x1, 14);
+        ctx.shadowBlur = 0; ctx.fillStyle = '#ffffff'; ctx.fillRect(0, s.y - 2, s.x1, 4);
+      }
+      break;
+  }
+  ctx.restore();
+}
+
+function drawCactusKing(b, flash) {
+  const x = Math.round(b.x), top = Math.round(b.y);
+  const g = flash ? '#ff8a80' : '#2e7d32', d = flash ? '#ff5252' : '#1b5e20';
+  ctx.fillStyle = g;
+  ctx.fillRect(x + 22, top + 22, 40, b.h - 22);
+  ctx.beginPath(); ctx.arc(x + 42, top + 22, 20, Math.PI, 0); ctx.fill();
+  ctx.fillRect(x + 4, top + 72, 20, 12); ctx.fillRect(x + 4, top + 44, 12, 40);
+  ctx.beginPath(); ctx.arc(x + 10, top + 44, 6, Math.PI, 0); ctx.fill();
+  ctx.fillRect(x + 60, top + 58, 20, 12); ctx.fillRect(x + 68, top + 30, 12, 40);
+  ctx.beginPath(); ctx.arc(x + 74, top + 30, 6, Math.PI, 0); ctx.fill();
+  ctx.fillStyle = d;
+  for (const sx of [30, 41, 52]) ctx.fillRect(x + sx, top + 62, 2, b.h - 66);
+  for (let i = 0; i < 6; i++) { ctx.fillRect(x + 20, top + 60 + i * 11, 3, 2); ctx.fillRect(x + 61, top + 60 + i * 11, 3, 2); }
+  // mặt giận dữ
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(x + 27, top + 26, 10, 9); ctx.fillRect(x + 46, top + 26, 10, 9);
+  ctx.fillStyle = '#212121'; ctx.fillRect(x + 27, top + 29, 5, 5); ctx.fillRect(x + 46, top + 29, 5, 5);
+  ctx.fillStyle = d;
+  ctx.beginPath(); ctx.moveTo(x + 25, top + 19); ctx.lineTo(x + 39, top + 24); ctx.lineTo(x + 39, top + 27); ctx.lineTo(x + 25, top + 22); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(x + 58, top + 19); ctx.lineTo(x + 44, top + 24); ctx.lineTo(x + 44, top + 27); ctx.lineTo(x + 58, top + 22); ctx.fill();
+  ctx.fillStyle = '#3e2723'; ctx.fillRect(x + 30, top + 42, 24, 8);
+  ctx.fillStyle = '#ffffff'; for (let i = 0; i < 4; i++) ctx.fillRect(x + 31 + i * 6, top + 42, 4, 3);
+  // vương miện
+  ctx.fillStyle = '#fbc02d';
+  ctx.beginPath(); ctx.moveTo(x + 26, top + 6); ctx.lineTo(x + 26, top - 10); ctx.lineTo(x + 33, top - 2); ctx.lineTo(x + 42, top - 14);
+  ctx.lineTo(x + 51, top - 2); ctx.lineTo(x + 58, top - 10); ctx.lineTo(x + 58, top + 6); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#e53935'; ctx.fillRect(x + 40, top - 3, 4, 4);
+}
+const FLASH_PAL = { '#': '#ff8a80', 'w': '#ff8a80', 'y': '#ffcdd2', 'r': '#ffffff', '.': '#ffffff' };
+function drawBoss() {
+  const b = boss;
+  if (b.phase === 'dying' && Math.floor(time * 20) % 2) return;
+  const flash = b.hitT > 0, x = Math.round(b.x), y = Math.round(b.y);
+  if (b.type === 'eagle') {
+    drawSprite(Math.floor(b.t * 4) % 2 ? BIRD_A : BIRD_B, x, y, 5, flash ? FLASH_PAL : { '#': '#6d4c41', '.': '#ffeb3b' });
+  } else if (b.type === 'dragon') {
+    drawSprite(Math.floor(b.t * 3) % 2 ? DRAGON_A : DRAGON_B, x, y, 5, flash ? FLASH_PAL : { '#': '#c62828', 'w': '#7f0000', 'y': '#ffb300', 'r': '#ffeb3b' });
+  } else if (b.type === 'trex') {
+    const moving = b.charge && b.charge.phase !== 'wind';
+    const legs = moving ? (Math.floor(b.t * 12) % 2 ? LEGS.run1 : LEGS.run2) : LEGS.stand;
+    const angry = b.charge && b.charge.phase === 'wind' && Math.floor(b.t * 12) % 2;
+    drawSprite(DINO_BODY.concat(legs), x, y, 4, flash || angry ? FLASH_PAL : { '#': '#4e342e', '.': '#ff1744' }, 20);
+  } else if (b.type === 'ufo') drawUFO(b, flash);
+  else drawCactusKing(b, flash);
+}
+function drawUFO(b, flash) {
+  const cx = b.x + b.w / 2, y = b.y;
+  ctx.fillStyle = flash ? '#ff8a80' : '#80deea';
+  ctx.beginPath(); ctx.ellipse(cx, y + 22, 26, 20, 0, Math.PI, 0); ctx.fill();
+  ctx.fillStyle = '#76ff03'; circle(cx, y + 15, 6);
+  ctx.fillStyle = '#000000'; ctx.fillRect(cx - 4, y + 13, 3, 3); ctx.fillRect(cx + 1, y + 13, 3, 3);
+  ctx.fillStyle = flash ? '#ff5252' : '#78909c';
+  ctx.beginPath(); ctx.ellipse(cx, y + 30, 56, 13, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = flash ? '#ff8a80' : '#b0bec5';
+  ctx.beginPath(); ctx.ellipse(cx, y + 27, 50, 6, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#455a64';
+  ctx.beginPath(); ctx.ellipse(cx, y + 41, 22, 6, 0, 0, Math.PI * 2); ctx.fill();
+  for (let i = 0; i < 7; i++) { ctx.fillStyle = (Math.floor(time * 6) + i) % 2 ? '#ffeb3b' : '#ff1744'; circle(cx - 42 + i * 14, y + 32, 3); }
+}
+
+function drawHUD() {
+  ctx.font = 'bold 16px "Courier New", monospace';
+  ctx.textAlign = 'right'; ctx.textBaseline = 'top';
+  const pad = n => String(n).padStart(5, '0');
+  ctx.fillStyle = COL.dim; ctx.fillText('HI ' + pad(hiScore), W - 100, 12);
+  ctx.fillStyle = COL.fg;  ctx.fillText(pad(score()), W - 16, 12);
+  // Mạng
+  for (let i = 0; i < MAX_LIVES; i++) {
+    ctx.save(); ctx.translate(W - 24 - i * 24, 44); ctx.scale(0.75, 0.75);
+    heartPath();
+    if (i < lives) { ctx.fillStyle = '#e91e63'; ctx.fill(); }
+    else { ctx.strokeStyle = COL.dim; ctx.lineWidth = 2; ctx.stroke(); }
+    ctx.restore();
+  }
+  // Thanh hiệu lực vật phẩm
+  let y = 12;
+  ctx.font = 'bold 13px "Courier New", monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  if (jetMode) {
+    ctx.fillStyle = '#0288d1'; ctx.fillText('✈ MÁY BAY  ↑↓←→ lái · [A] bắn', 16, y + 10);
+    y += 22;
+  }
+  for (const k of TIMED) {
+    const t = effects[k];
+    if (t <= 0) continue;
+    const info = ITEM_INFO[k];
+    ctx.globalAlpha = (t < 3 && Math.floor(time * 6) % 2 === 0) ? 0.35 : 1;
+    drawIcon(k, 24, y + 10, 0.6, k === 'sword' ? Math.PI / 4 : 0);
+    ctx.fillStyle = COL.fg; ctx.fillText(info.name, 40, y + 10);
+    ctx.strokeStyle = COL.dim; ctx.lineWidth = 1; ctx.strokeRect(112.5, y + 4.5, 81, 11);
+    ctx.fillStyle = info.color; ctx.fillRect(114, y + 6, 78 * Math.min(1, t / effectsMax[k]), 8);
+    ctx.fillStyle = COL.fg; ctx.fillText(Math.ceil(t) + 's ' + info.hint, 202, y + 10);
+    ctx.globalAlpha = 1;
+    y += 22;
+  }
+  // Thanh máu boss
+  if (boss) {
+    const bw = 260, bx = W / 2 - bw / 2;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = COL.fg; ctx.font = 'bold 14px "Courier New", monospace';
+    ctx.fillText(boss.name + ' · CẤP ' + boss.level, W / 2, 16);
+    ctx.strokeStyle = COL.fg; ctx.lineWidth = 1; ctx.strokeRect(bx - 0.5, 26.5, bw + 1, 11);
+    ctx.fillStyle = '#e53935'; ctx.fillRect(bx + 1, 28, (bw - 2) * (boss.hp / boss.maxHp), 8);
+    if (boss.phase === 'fight') {
+      ctx.textAlign = 'left'; ctx.fillStyle = COL.dim; ctx.font = 'bold 12px "Courier New", monospace';
+      ctx.fillText(Math.ceil(boss.timeLeft) + 's', bx + bw + 8, 32);
+    }
+  }
+  if (boss && boss.phase === 'prep') {
+    ctx.textAlign = 'center';
+    if (boss.prepT > 0) {
+      ctx.font = 'bold 30px "Courier New", monospace'; ctx.fillStyle = '#e53935';
+      ctx.fillText('CHUẨN BỊ ' + Math.ceil(boss.prepT), W / 2, 165);
+    }
+    ctx.font = 'bold 15px "Courier New", monospace'; ctx.fillStyle = '#0288d1';
+    ctx.fillText(jetMode ? 'Đã lên máy bay!  ↑↓←→ lái · A bắn' : 'Chạy tới nhặt máy bay để chiến đấu!', W / 2, 195);
+  }
+  if (warnT > 0 && Math.floor(warnT * 5) % 2 === 0) {
+    ctx.textAlign = 'center'; ctx.font = 'bold 22px "Courier New", monospace';
+    ctx.fillStyle = '#e53935'; ctx.fillText(warnText, W / 2, 125);
+  }
+}
+
+function drawCenterText(lines) {
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  for (const [text, y, size, col] of lines) {
+    ctx.font = 'bold ' + size + 'px "Courier New", monospace';
+    ctx.fillStyle = col || COL.fg;
+    ctx.fillText(text, W / 2, y);
+  }
+}
+
+function draw() {
+  COL.bg = mix('#f7f7f7', '#202124', nightT);
+  COL.fg = mix('#535353', '#e8eaed', nightT);
+  COL.dim = mix('#9a9a9a', '#80868b', nightT);
+  COL.cloud = mix('#dedede', '#3c4043', nightT);
+  if (document.body.dataset.bg !== COL.bg) {
+    document.body.dataset.bg = COL.bg;
+    document.documentElement.style.setProperty('--bg', COL.bg);
+    document.documentElement.style.setProperty('--fg', COL.fg);
+  }
+
+  ctx.fillStyle = COL.bg; ctx.fillRect(0, 0, W, H);
+  ctx.save();
+  if (shakeT > 0) ctx.translate((Math.random() - 0.5) * 30 * shakeT, (Math.random() - 0.5) * 30 * shakeT);
+
+  if (nightT > 0) {
+    ctx.globalAlpha = nightT; ctx.fillStyle = COL.fg;
+    for (const s of stars) ctx.fillRect(Math.round(((s.x - dist * 0.01) % W + W) % W), s.y, s.s, s.s);
+    circle(760, 60, 14);
+    ctx.fillStyle = COL.bg; circle(768, 55, 12);
+    ctx.globalAlpha = 1;
+  }
+  for (const c of clouds) drawCloud(c.x, c.y);
+
+  ctx.fillStyle = COL.fg;
+  ctx.fillRect(0, GROUND - 2, W, 1);
+  for (const p of pebbles) ctx.fillRect(Math.round(p.x), Math.round(p.y), p.w, 1);
+
+  if (boss) drawBoss();
+  for (const it of items) drawItem(it);
+  for (const o of obstacles) drawObstacle(o);
+  for (const s of shots) drawShot(s);
+  for (const b of bullets) {
+    ctx.save(); ctx.translate(Math.round(b.x), Math.round(b.y)); ctx.rotate(Math.atan2(b.vy, b.vx));
+    if (b.missile) {
+      ctx.fillStyle = '#eceff1'; ctx.fillRect(-8, -2.5, 14, 5);
+      ctx.fillStyle = '#e53935'; ctx.beginPath(); ctx.moveTo(6, -2.5); ctx.lineTo(10, 0); ctx.lineTo(6, 2.5); ctx.fill();
+      ctx.fillStyle = '#546e7a'; ctx.fillRect(-8, -4, 3, 8);
+      ctx.restore(); continue;
+    }
+    ctx.fillStyle = b.reflected ? '#b39ddb' : '#ffca28'; ctx.fillRect(0, -2, 9, 4);
+    ctx.fillStyle = b.reflected ? ITEM_INFO.sword.color : ITEM_INFO.gun.color; ctx.fillRect(-6, -1, 6, 2);
+    ctx.restore();
+  }
+  for (const b of bombs) {
+    ctx.fillStyle = '#37474f'; circle(b.x, b.y, 6);
+    ctx.fillStyle = Math.floor(b.t * 20) % 2 ? '#ffca28' : '#ff5722'; circle(b.x + 4, b.y - 6, 2);
+  }
+  if (laserOn && state === 'running') drawLaser();
+  drawDino();
+
+  for (const b of booms) {
+    const p = 1 - b.life / b.max, r = b.r * (0.3 + 0.7 * p);
+    ctx.save();
+    ctx.globalAlpha = (1 - p) * 0.55; ctx.fillStyle = '#ff9800'; circle(b.x, b.y, r);
+    ctx.globalAlpha = 1 - p; ctx.strokeStyle = '#ffeb3b'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(b.x, b.y, r, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+  }
+  for (const p of particles) {
+    ctx.globalAlpha = Math.min(1, p.life / 0.4);
+    ctx.fillStyle = color(p.color);
+    ctx.fillRect(Math.round(p.x), Math.round(p.y), p.size, p.size);
+  }
+  ctx.globalAlpha = 1;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  for (const t of texts) {
+    ctx.font = 'bold ' + t.size + 'px "Courier New", monospace';
+    ctx.globalAlpha = Math.min(1, t.life * 2);
+    ctx.fillStyle = color(t.color);
+    ctx.fillText(t.text, t.x, t.y);
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+
+  drawHUD();
+
+  if (state === 'ready') {
+    drawCenterText([
+      ['KHỦNG LONG CHIẾN BINH', 105, 26],
+      ['Nhấn SPACE hoặc chạm màn hình để bắt đầu', 145, 15, COL.dim],
+    ]);
+  } else if (state === 'paused') {
+    drawCenterText([['TẠM DỪNG', 115, 26], ['Nhấn P để tiếp tục', 150, 15, COL.dim]]);
+  } else if (state === 'over') {
+    drawCenterText([['G A M E   O V E R', 100, 26]]);
+    ctx.save();
+    ctx.strokeStyle = COL.fg; ctx.fillStyle = COL.fg; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(W / 2, 145, 13, -Math.PI * 0.35, Math.PI * 1.45); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(W / 2 + 6, 128); ctx.lineTo(W / 2 + 18, 128); ctx.lineTo(W / 2 + 14, 141); ctx.closePath(); ctx.fill();
+    ctx.restore();
+    if (overT > 0.4) drawCenterText([['Nhấn SPACE / ENTER để chơi lại', 185, 15, COL.dim]]);
+  }
+}
+
+// ================== VÒNG LẶP ==================
+reset();
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  if (state === 'running') {
+    const steps = Math.max(1, Math.ceil(dt / (1 / 120)));
+    for (let i = 0; i < steps && state === 'running'; i++) update(dt / steps);
+  }
+  updateCosmetic(dt);
+  draw();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// ================== ĐIỀU KHIỂN ==================
+function start() { reset(); state = 'running'; jump(); }
+function pressJump() {
+  ensureAudio();
+  if (state === 'ready') start();
+  else if (state === 'over') { if (overT > 0.4) start(); }
+  else if (state === 'running') jump();
+}
+const KEYMAP = {
+  Space: 'jump', ArrowUp: 'jump', KeyW: 'jump',
+  ArrowDown: 'down', KeyS: 'down',
+  ArrowLeft: 'left', ArrowRight: 'right',
+  KeyA: 'attack',
+};
+window.addEventListener('keydown', e => {
+  const c = e.code, act = KEYMAP[c];
+  if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(c)) e.preventDefault();
+  if (act === 'jump') { if (!keys.jump) pressJump(); keys.jump = true; }
+  else if (act) {
+    keys[act] = true;
+    if (act === 'attack' && state === 'running') attack();
+  }
+  else if (c === 'Enter' && state === 'over' && overT > 0.4) { ensureAudio(); start(); }
+  else if (c === 'KeyP' || c === 'Escape') {
+    if (state === 'running') state = 'paused';
+    else if (state === 'paused') { state = 'running'; last = performance.now(); }
+  }
+});
+window.addEventListener('keyup', e => { const act = KEYMAP[e.code]; if (act) keys[act] = false; });
+canvas.addEventListener('pointerdown', e => { e.preventDefault(); keys.jump = true; pressJump(); });
+window.addEventListener('pointerup', () => { keys.jump = false; });
+window.addEventListener('blur', () => {
+  for (const k in keys) keys[k] = false;
+  if (state === 'running') state = 'paused';
+});
+</script>
+</body>
+</html>
