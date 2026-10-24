@@ -1,10 +1,11 @@
-data = [5, 19, 8, 13, 7]
-lon_nhat = data[0]
-nho_nhat = data[0]
+# Bai 2 - Thanh vien A: lon nhat - nho nhat (khong dung sort, max, min)
+data = [8, 11, 15, 22, 10]
+
+lon = nho = data[0]
 for x in data:
-    if x > lon_nhat:
-        lon_nhat = x
-    if x < nho_nhat:
-        nho_nhat = x
-A = lon_nhat - nho_nhat
+    if x > lon:
+        lon = x
+    if x < nho:
+        nho = x
+A = lon - nho
 print("A =", A)

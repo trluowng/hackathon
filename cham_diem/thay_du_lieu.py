@@ -66,6 +66,44 @@ class DanhSach:
         return _dung_day(type(v), _kieu_trong(v), moi)
 
 
+class LuoiKyTu:
+    """Ma trận ký tự; dạng chuẩn: list chuỗi, mỗi chuỗi một hàng (vd ["UN#", "ITE"]).
+
+    Nhận cả: list các list ký tự | list chuỗi hàng | chuỗi nhiều dòng (ký tự có thể cách nhau bằng khoảng trắng).
+    """
+
+    def __init__(self, goc):
+        self.goc = list(goc)
+
+    @staticmethod
+    def _hang_cua_chuoi(s):
+        return ["".join(d.split()) for d in s.splitlines() if d.strip()]
+
+    def khop(self, v):
+        if isinstance(v, str):
+            return "chuoi" if "\n" in v.strip() and self._hang_cua_chuoi(v) == self.goc else None
+        if not isinstance(v, (list, tuple)) or len(v) != len(self.goc):
+            return None
+        if all(isinstance(h, str) for h in v):
+            return "hang" if list(v) == self.goc else None
+        if all(isinstance(h, (list, tuple)) and all(isinstance(c, str) and len(c) == 1 for c in h) for h in v):
+            return "luoi" if ["".join(h) for h in v] == self.goc else None
+        return None
+
+    def dung_lai(self, v, vai_tro, moi):
+        if vai_tro == "hang":
+            return type(v)(moi)
+        if vai_tro == "luoi":
+            return _dung_day(type(v), type(v[0]), [list(h) for h in moi])
+        dong_mau = next(d for d in v.splitlines() if d.strip())
+        thut_le = dong_mau[: len(dong_mau) - len(dong_mau.lstrip())]
+        cach = " " if len(dong_mau.split()) > 1 else ""
+        dau, cuoi = v[: len(v) - len(v.lstrip())], v[len(v.rstrip()):]
+        if thut_le and dau.endswith(thut_le):
+            dau = dau[: len(dau) - len(thut_le)]
+        return dau + "\n".join(thut_le + cach.join(h) for h in moi) + cuoi
+
+
 # ---------- Đồ thị ----------
 
 def _doc_chuoi_canh(s):

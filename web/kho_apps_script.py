@@ -170,11 +170,6 @@ def lan_nop_moi_nhat(ma_doi, ca_nop_loi=False):
     return None
 
 
-def hidden_dung_som_nhat(ma_doi):
-    ds = [r["thoi_gian"] for _, r in _cua_doi(ma_doi) if r.get("hidden") and not r.get("loi")]
-    return min(ds) if ds else None
-
-
 def thu_muc_lam_viec(lan_nop):
     """Tải file của lần nộp (qua Apps Script) về thư mục tạm để chấm."""
     dich = os.path.join(THU_MUC_TAM, "cham", lan_nop["id"])
@@ -196,6 +191,12 @@ def luu_kiem_tra(lan_nop_id, kiem_tra):
 
 # ---------- Kết quả chấm ----------
 
+def _ban_ghi_tom_tat(tom_tat):
+    """Tóm tắt điểm ghi vào bản ghi lần nộp ('hidden' của bản ghi là cờ lúc nộp nên dùng tên 'hidden_ht')."""
+    return {"tong": tom_tat["tong"], "diem_bai": tom_tat["diem_bai"], "cho_duyet": tom_tat["cho_duyet"],
+            "nen_xem": tom_tat["nen_xem"], "hidden_ht": tom_tat["hidden"]}
+
+
 def _sua_ban_ghi(lan_nop_id, sua):
     _goi("sua_ban_ghi", id=lan_nop_id, sua=sua)
     _quen("ds")
@@ -208,8 +209,7 @@ def dat_ket_qua(lan_nop_id, trang_thai, bao_cao=None, phieu=None, loi=None):
         _goi("ghi_json", id=lan_nop_id, ten="ket_qua.json", du_lieu=du_lieu)
         if trang_thai == "da_cham":
             duyet = {p: bool(v["dat"]) for p, v in ds_duyet(lan_nop_id).items()}
-            sua.update(tinh_tom_tat(du_lieu, duyet))
-            sua["tt"] = trang_thai
+            sua.update(_ban_ghi_tom_tat(tinh_tom_tat(du_lieu, duyet)))
     _sua_ban_ghi(lan_nop_id, sua)
 
 
@@ -230,10 +230,11 @@ def ds_chua_xong():
 
 def lay_tom_tat(lan_nop_id):
     r = _tim(lan_nop_id) or {}
-    tom_tat = {"trang_thai": r.get("tt") or "chua_cham", "tong": None, "diem_bai": [], "cho_duyet": 0, "nen_xem": 0}
+    tom_tat = {"trang_thai": r.get("tt") or "chua_cham", "tong": None, "diem_bai": [], "cho_duyet": 0, "nen_xem": 0,
+               "hidden": False}
     if tom_tat["trang_thai"] == "da_cham" and r.get("tong") is not None:
         tom_tat.update(tong=r["tong"], diem_bai=r.get("diem_bai") or [],
-                       cho_duyet=r.get("cho_duyet", 0), nen_xem=r.get("nen_xem", 0))
+                       cho_duyet=r.get("cho_duyet", 0), nen_xem=r.get("nen_xem", 0), hidden=bool(r.get("hidden_ht")))
     return tom_tat
 
 
@@ -252,7 +253,7 @@ def duyet(lan_nop_id, phan, dat, ghi_chu=""):
     _goi("ghi_json", id=lan_nop_id, ten="duyet.json", du_lieu=ds)
     kq = lay_ket_qua(lan_nop_id)
     if kq and kq["trang_thai"] == "da_cham" and kq["bao_cao"]:
-        _sua_ban_ghi(lan_nop_id, tinh_tom_tat(kq, {p: bool(v["dat"]) for p, v in ds.items()}))
+        _sua_ban_ghi(lan_nop_id, _ban_ghi_tom_tat(tinh_tom_tat(kq, {p: bool(v["dat"]) for p, v in ds.items()})))
 
 
 # ---------- Đội: ghép từ danh sách admin thêm/xóa và các lần nộp ----------

@@ -18,10 +18,48 @@
     display: block; width: min(1000px, 100%); height: auto;
     image-rendering: pixelated; touch-action: manipulation; outline: none;
   }
+  #pad { width: min(1000px, 100%); display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  #pad .grp { display: flex; gap: 10px; align-items: center; }
+  #pad button {
+    width: 60px; height: 60px; border-radius: 50%; padding: 0;
+    border: 2px solid var(--fg); background: transparent; color: var(--fg);
+    font: bold 22px "Courier New", monospace; line-height: 1; cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    touch-action: none; -webkit-tap-highlight-color: transparent;
+  }
+  #pad button small { font-size: 9px; margin-top: 2px; }
+  #pad button.big { width: 76px; height: 76px; font-size: 26px; }
+  #pad button.mini { width: 40px; height: 40px; font-size: 14px; }
+  #pad button.on { background: var(--fg); color: var(--bg); }
+  /* 4 nút hướng xếp hình dấu cộng */
+  #pad .dpad { display: grid; grid-template-columns: repeat(3, auto); grid-template-rows: repeat(3, auto); gap: 4px; }
+  #pad .dpad .up    { grid-area: 1 / 2; }
+  #pad .dpad .left  { grid-area: 2 / 1; }
+  #pad .dpad .right { grid-area: 2 / 3; }
+  #pad .dpad .down  { grid-area: 3 / 2; }
+  @media (max-width: 480px) {
+    #pad .grp { gap: 6px; }
+    #pad .dpad { gap: 2px; }
+    #pad button { width: 50px; height: 50px; font-size: 18px; }
+    #pad button.big { width: 62px; height: 62px; font-size: 22px; }
+    #pad button.mini { width: 32px; height: 32px; font-size: 12px; }
+  }
 </style>
 </head>
 <body>
 <canvas id="game" width="900" height="300" tabindex="0"></canvas>
+<div id="pad">
+  <div class="grp">
+    <button data-key="KeyA" tabindex="-1" title="A: tấn công / mua">A<small>ĐÁNH</small></button>
+  </div>
+  <button data-key="KeyP" class="mini" tabindex="-1" title="P / Esc: tạm dừng">II</button>
+  <div class="dpad">
+    <button data-key="ArrowUp" class="up" tabindex="-1" title="Space / ↑: giữ lâu nhảy cao, thả sớm nhảy thấp">▲<small>NHẢY</small></button>
+    <button data-key="ArrowLeft" class="left" tabindex="-1" title="← (lái máy bay / chọn)">◀</button>
+    <button data-key="ArrowRight" class="right" tabindex="-1" title="→ (lái máy bay / chọn)">▶</button>
+    <button data-key="ArrowDown" class="down" tabindex="-1" title="↓ / S: cúi, đang nhảy thì rơi nhanh">▼<small>CÚI</small></button>
+  </div>
+</div>
 
 <script>
 'use strict';
@@ -49,22 +87,45 @@ const ITEM_INFO = {
 };
 const TIMED = Object.keys(ITEM_INFO).filter(k => !ITEM_INFO[k].instant);
 const WEAPONS = ['sword', 'gun', 'bomb', 'laser'];   // chỉ cầm 1 vũ khí; khiên & giày dùng song song
-const MONSTER_PTS = { cactus: 20, bird: 50, scorpion: 30, slime: 30, bat: 40, drone: 40, boar: 40, mole: 40, wasp: 50, golem: 60 };
-// Quái mở khoá dần theo điểm: [loại, điểm mở khoá, tần suất ban đầu, tần suất tăng thêm mỗi 1000 điểm, tên]
+// Điểm, máu và xu nhận được khi hạ từng loại quái
+const MONSTERS = {
+  cactus:   { pts: 20, hp: 2, coin: 1 },
+  bird:     { pts: 50, hp: 1, coin: 2 },
+  scorpion: { pts: 30, hp: 2, coin: 2 },
+  slime:    { pts: 30, hp: 2, coin: 2 },
+  goblin:   { pts: 30, hp: 1, coin: 2 },
+  bat:      { pts: 40, hp: 1, coin: 2 },
+  drone:    { pts: 40, hp: 1, coin: 1 },
+  boar:     { pts: 40, hp: 3, coin: 3 },
+  mole:     { pts: 40, hp: 2, coin: 3 },
+  wasp:     { pts: 50, hp: 2, coin: 3 },
+  golem:    { pts: 60, hp: 6, coin: 6 },
+};
+// Quái mở khoá dần theo điểm (giãn cách xa để quái mới ra chậm): [loại, điểm mở khoá, tần suất ban đầu, tần suất tăng thêm mỗi 1000 điểm, tên]
 const MONSTER_TABLE = [
   ['cactus',   0,    5,   0,   'XƯƠNG RỒNG'],
-  ['bird',     250,  2,   0.3, 'CHIM'],
-  ['scorpion', 400,  1.5, 0.3, 'BỌ CẠP'],
-  ['slime',    550,  1.5, 0.3, 'SLIME NHẢY'],
-  ['bat',      700,  1.2, 0.3, 'DƠI'],
-  ['boar',     1000, 1.2, 0.4, 'HEO RỪNG'],
-  ['mole',     1400, 1.2, 0.4, 'GIUN CÁT'],
-  ['wasp',     1800, 1.0, 0.4, 'ONG BẮP CÀY'],
-  ['golem',    2400, 0.8, 0.4, 'NGƯỜI ĐÁ'],
-  ['flock',    3000, 0.6, 0.3, 'ĐÀN CHIM'],
+  ['bird',     500,  2,   0.3, 'CHIM'],
+  ['scorpion', 1000, 1.5, 0.3, 'BỌ CẠP'],
+  ['slime',    1600, 1.5, 0.3, 'SLIME NHẢY'],
+  ['goblin',   2200, 1.3, 0.3, 'YÊU TINH PHI ĐAO'],
+  ['bat',      2900, 1.2, 0.3, 'DƠI'],
+  ['boar',     3700, 1.2, 0.4, 'HEO RỪNG'],
+  ['mole',     4600, 1.2, 0.4, 'GIUN CÁT'],
+  ['wasp',     5600, 1.0, 0.4, 'ONG BẮP CÀY'],
+  ['golem',    7000, 0.8, 0.4, 'NGƯỜI ĐÁ'],
+  ['flock',    8500, 0.6, 0.3, 'ĐÀN CHIM'],
 ];
-// Thời gian dùng vật phẩm: khởi đầu 10 giây, điểm càng cao càng lâu (tối đa 30 giây)
-const itemDuration = () => Math.min(30, 10 + score() / 300);
+// Cửa hàng nâng cấp vũ khí: cứ mỗi 10.000 điểm dừng chân 1 lần
+const SHOP_EVERY = 5000;
+const UPG_MAX = 5, UPG_COST = [20, 40, 70, 110, 160];
+const UPG_STATS = [['rate', 'TỈ LỆ RƠI'], ['dmg', 'SÁT THƯƠNG'], ['cd', 'ĐỘ TRỄ'], ['dur', 'THỜI GIAN']];
+const WEAPON_DMG = { sword: 2, gun: 1, bomb: 4, laser: 8 };   // sát thương cơ bản lên quái (laser: mỗi giây)
+const WEAPON_CD = { sword: 0.32, gun: 0.22, bomb: 0.9 };      // laser bắn liên tục nên không có độ trễ
+const upgVal = (stat, lv) => stat === 'rate' ? 1 + 0.5 * lv : stat === 'dmg' ? 1 + 0.3 * lv : stat === 'cd' ? 1 - 0.12 * lv : 10 + 4 * lv;
+const upgOf = (k, stat) => upgVal(stat, upg[k][stat]);
+const canUpg = (k, stat) => !(k === 'laser' && stat === 'cd');
+// Thời gian dùng: vũ khí 10 giây (nâng tối đa 30 giây), khiên / giày / jetpack cố định 10 giây
+const itemDuration = k => WEAPONS.includes(k) ? upgOf(k, 'dur') : 10;
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -287,13 +348,15 @@ const SFX = {
 function sfx(n) { try { SFX[n] && SFX[n](); } catch (e) {} }
 
 // ================== TRẠNG THÁI ==================
-let state = 'ready';            // ready | running | paused | over
+let state = 'ready';            // ready | running | paused | shop | over
 let speed, dist, bonus, time, lives;
 let obstacles, items, bullets, bombs, shots, particles, texts, booms;
 let effects, gapLeft, itemTimer, shakeT, overT, lastMilestone;
 let boss, bossPending, bossNextAt, bossLevel, warnT, warnText, laserOn, laserSndT, bossHitSndT;
 let jetMode = false, lastBossType = null, heartTimer = 0, effectsMax = {}, unlockIdx = 0, thrustSndT = 0;
 let nightT = 0;
+let coins = 0, upg = {}, shopNextAt = SHOP_EVERY, shopPending = false, shopStall = null;
+let shopSel = { r: 0, c: 0 }, shopMsg = null, shopMsgT = 0, coinFx = [];
 let hiScore = 0;
 try { hiScore = parseInt(localStorage.getItem('dino_hi') || '0', 10) || 0; } catch (e) {}
 const keys = { jump: false, down: false, left: false, right: false, attack: false };
@@ -337,11 +400,13 @@ function reset() {
   obstacles = []; items = []; bullets = []; bombs = []; shots = []; particles = []; texts = []; booms = [];
   effects = {}; effectsMax = {}; for (const k of TIMED) { effects[k] = 0; effectsMax[k] = 10; }
   unlockIdx = 1; thrustSndT = 0;
+  coins = 0; upg = {}; for (const k of WEAPONS) upg[k] = { rate: 0, dmg: 0, cd: 0, dur: 0 };
+  shopNextAt = SHOP_EVERY; shopPending = false; shopStall = null; coinFx = [];
   gapLeft = 650; itemTimer = rand(8, 25); heartTimer = rand(20, 45); shakeT = 0; overT = 0; lastMilestone = 0;
   boss = null; bossPending = false; bossNextAt = rand(BOSS_GAP_MIN, BOSS_GAP_MAX); bossLevel = 0; lastBossType = null; jetMode = false;
   warnT = 0; warnText = ''; laserOn = false; laserSndT = 0; bossHitSndT = 0;
   Object.assign(dino, { x: 60, y: 0, vy: 0, onGround: true, ducking: false, runT: 0, slashT: 0, slashCD: 0,
-                        shootCD: 0, bombCD: 0, flashT: 0, invT: 0, doubleUsed: false, dead: false, thrust: false });
+                        shootCD: 0, bombCD: 0, flashT: 0, invT: 0, doubleUsed: false, dead: false, thrust: false, slashId: 0 });
 }
 
 // ================== KHỦNG LONG ==================
@@ -368,6 +433,11 @@ function dinoRects() {
 function dinoBox() { const sp = dinoSprite(); return { x: dino.x, y: sp.top, w: sp.w, h: sp.h }; }
 function dinoCenter() { const r = dinoBox(); return { x: r.x + r.w / 2, y: r.y + r.h / 2 }; }
 
+// Đang ở trên không mà ấn xuống: lao xuống ngay (kết hợp trọng lực ×2.5 khi giữ ▼)
+function fastFall() {
+  if (state !== 'running' || jetMode || dino.onGround || dino.dead) return;
+  dino.vy = Math.min(dino.vy, -350);
+}
 function jump() {
   if (dino.dead || jetMode) return;
   if (dino.onGround) {
@@ -390,14 +460,14 @@ function aimDir(ox, oy) {
   return { dx: 1, dy: 0 };
 }
 function trySlash() {
-  if (effects.sword > 0 && dino.slashCD <= 0) { dino.slashT = 0.2; dino.slashCD = 0.32; sfx('slash'); }
+  if (effects.sword > 0 && dino.slashCD <= 0) { dino.slashT = 0.2; dino.slashCD = WEAPON_CD.sword * upgOf('sword', 'cd'); dino.slashId++; sfx('slash'); }
 }
 function tryShoot() {
   if (effects.gun > 0 && dino.shootCD <= 0) {
     const hand = dinoSprite().hand, ox = hand.x + 12, oy = hand.y - 2;
     const d = aimDir(ox, oy);
-    bullets.push({ x: ox, y: oy, vx: d.dx * BULLET_SPEED, vy: d.dy * BULLET_SPEED, dmg: 1 });
-    dino.shootCD = 0.22; dino.flashT = 0.06;
+    bullets.push({ x: ox, y: oy, vx: d.dx * BULLET_SPEED, vy: d.dy * BULLET_SPEED, dmg: upgOf('gun', 'dmg') });
+    dino.shootCD = WEAPON_CD.gun * upgOf('gun', 'cd'); dino.flashT = 0.06;
     sfx('shoot');
   }
 }
@@ -408,7 +478,7 @@ function tryBomb() {
     const t = bossTarget();
     if (t && t.x > ox + 60) { const T = 0.75; vx = (t.x - ox) / T; vy = (t.y - oy - 0.5 * BOMB_G * T * T) / T; }
     bombs.push({ x: ox, y: oy, vx, vy, t: 0 });
-    dino.bombCD = 0.9;
+    dino.bombCD = WEAPON_CD.bomb * upgOf('bomb', 'cd');
     sfx('throw');
   }
 }
@@ -474,7 +544,8 @@ function makeBat(x, baseY = GROUND - 62) { return { type: 'bat', x, y: baseY, ba
 function makeBoar(x)  { return { type: 'boar', x, y: GROUND - 18, w: 19 * S, h: 9 * S, extra: 170, t: 0 }; }
 function makeMole(x)  { return { type: 'mole', x, y: GROUND, w: 18, h: 0, extra: 0, t: 0, phase: Math.random() * 1.8, up: 0 }; }
 function makeWasp(x)  { return { type: 'wasp', x, y: GROUND - 60, baseY: GROUND - 60, w: 24, h: 16, extra: 120, t: Math.random() * 6 }; }
-function makeGolem(x) { return { type: 'golem', x, y: GROUND - 56, w: 30, h: 56, extra: 30, t: 0, hp: 3, hitT: 0 }; }
+function makeGolem(x) { return { type: 'golem', x, y: GROUND - 56, w: 30, h: 56, extra: 30, t: 0, hitT: 0 }; }
+function makeGoblin(x) { return { type: 'goblin', x, y: GROUND - 30, w: 22, h: 30, extra: 30, t: 0, cd: rand(0.2, 0.6), wind: 0, throws: 0 }; }
 function makeDrone(x, y) { return { type: 'drone', x, y, w: 20, h: 20, extra: 0, t: 0, vx: -80, vy: 0 }; }
 
 function cactusRects(o) {
@@ -505,6 +576,7 @@ function obstacleRects(o) {
     case 'mole':     return o.h < 6 ? [] : [{ x: o.x + 3, y: o.y + 2, w: o.w - 6, h: o.h - 2 }];
     case 'wasp':     return [{ x: o.x + 3, y: o.y + 3, w: o.w - 6, h: o.h - 6 }];
     case 'golem':    return [{ x: o.x + 3, y: o.y + 4, w: o.w - 6, h: o.h - 4 }];
+    case 'goblin':   return [{ x: o.x + 3, y: o.y + 3, w: o.w - 6, h: o.h - 3 }];
   }
   return [];
 }
@@ -527,7 +599,7 @@ function spawnObstacle() {
     return;
   }
   const make = { cactus: makeCactus, bird: makeBird, scorpion: makeScorpion, slime: makeSlime, bat: makeBat,
-                 boar: makeBoar, mole: makeMole, wasp: makeWasp, golem: makeGolem }[type];
+                 boar: makeBoar, mole: makeMole, wasp: makeWasp, golem: makeGolem, goblin: makeGoblin }[type];
   obstacles.push(make(W + 10));
   if (type === 'scorpion') gapLeft += 150;
   if (type === 'boar') gapLeft += 220;
@@ -545,7 +617,7 @@ function canSpawnItem() { return !obstacles.some(o => o.x + o.w > W - 170); }
 function spawnItem(mode) {
   let kind;
   let y = Math.random() < 0.5 ? GROUND - 95 : GROUND - 20;
-  if (mode === 'first') kind = pickWeighted([['gun', 1], ['laser', 1], ['bomb', 1]]);
+  if (mode === 'first') kind = pickWeighted(['gun', 'laser', 'bomb'].map(k => [k, upgOf(k, 'rate')]));
   else if (mode === 'jet') {                     // đang lái máy bay: chỉ rơi khiên / mạng, ở độ cao bất kỳ
     kind = pickWeighted([['none', 1], ['shield', 0.3]].concat(lives < MAX_LIVES ? [['heart', 0.7]] : []));
     if (kind === 'none') return;                 // nhiều lượt không rơi gì để boss bay không quá dễ
@@ -555,6 +627,7 @@ function spawnItem(mode) {
     for (const k in ITEM_INFO) {
       const info = ITEM_INFO[k];
       let w = mode === 'boss' ? info.bw : info.w;
+      if (WEAPONS.includes(k)) w *= upgOf(k, 'rate');
       if (k === 'heart' && lives >= MAX_LIVES) w = 0;
       if (w > 0) entries.push([k, w]);
     }
@@ -576,8 +649,7 @@ function collectItem(it, iy) {
   } else {
     // Chỉ cầm 1 vũ khí: nhặt vũ khí mới thì mất vũ khí cũ. Khiên và giày nhảy đôi dùng song song được.
     if (WEAPONS.includes(it.kind)) for (const k of WEAPONS) effects[k] = 0;
-    let dur = itemDuration();
-    if (it.kind === 'shield' && boss) dur = Math.min(dur, 10);   // khiên khi đánh boss tối đa 10 giây
+    const dur = itemDuration(it.kind);
     effects[it.kind] = dur; effectsMax[it.kind] = dur;
     sfx('pickup');
     addText(it.x, iy - 24, info.name + ' ' + Math.round(dur) + 's', info.color);
@@ -592,7 +664,10 @@ const BOSS_DEF = {
   trex:   { name: 'BẠO CHÚA T-REX',    kind: 'ground', w: 20 * 4, h: 19 * 4, homeX: 770, hp: 100 },
   dragon: { name: 'RỒNG LỬA',          kind: 'high',   w: 28 * 5, h: 14 * 5, homeX: 690, hp: 220 },
   ufo:    { name: 'ĐĨA BAY NGOÀI HÀNH TINH', kind: 'high', w: 112, h: 52,   homeX: 700, hp: 280 },
+  mammoth:{ name: 'VOI MA MÚT',        kind: 'ground', w: 120,    h: 88,     homeX: 740, hp: 120 },
+  brachio:{ name: 'KHỦNG LONG CỔ DÀI', kind: 'ground', w: 140,    h: 150,    homeX: 730, hp: 130 },
 };
+const brachioHead = b => ({ x: b.x + 6, y: b.y + 18 + Math.sin(b.t * 2) * 4 });
 const BOSS_TYPES = Object.keys(BOSS_DEF);
 const nextBossGap = () => rand(BOSS_GAP_MIN, BOSS_GAP_MAX);
 
@@ -640,9 +715,10 @@ function hurtBoss(d) {
 }
 function endBoss(win) {
   if (win) {
-    const p = 500 * boss.level;
-    bonus += p;
-    addText(W / 2, 110, 'HẠ BOSS! +' + p, '#ffb300', 22);
+    const p = 500 * boss.level, c = 25 * boss.level;
+    bonus += p; coins += c;
+    coinBurst(boss.x + boss.w / 2, boss.y + boss.h / 2, 8);
+    addText(W / 2, 110, 'HẠ BOSS! +' + p + '  +' + c + ' XU', '#ffb300', 22);
     const kind = lives < MAX_LIVES ? 'heart' : pickWeighted(TIMED.map(k => [k, 1]));
     items.push({ kind, x: Math.min(W - 40, boss.x + boss.w / 2), y: GROUND - 20, t: 0 });
   }
@@ -742,6 +818,40 @@ function bossAttack(b) {
     } else {                                                 // thả drone đuổi theo
       for (let i = 0; i < 2 + (lv >= 8 ? 1 : 0); i++) obstacles.push(makeDrone(b.x + 20 + i * 30, b.y + 35));
     }
+  } else if (b.type === 'mammoth') {
+    if (r < 0.4) {                                           // vòi phun cầu tuyết vòng cung, rơi xuống lăn
+      for (let i = 0; i < 2 + (lv >= 6 ? 1 : 0); i++) schedule(i * 0.45, () => {
+        enemyShot('snow', boss.x + 6, boss.y + 70, -rand(260, 400) * boss.power, -rand(250, 420), { g: 900, w: 16, h: 16, rolls: true });
+        sfx('throw');
+      });
+    } else if (r < 0.75) {                                   // dậm chân → băng nhọn rơi cắm xuống đất phía trước (nhảy qua)
+      shakeT = Math.max(shakeT, 0.25); sfx('boom');
+      for (let i = 0; i < 2 + (lv >= 5 ? 1 : 0); i++) schedule(0.3 + i * 0.55 / pw, () => {
+        enemyShot('icicle', rand(380, 620), -20, 0, 0, { g: 1400, w: 10, h: 22, rolls: true, rollV: speed });
+      });
+    } else {                                                 // gầm lên rồi lăn quả cầu tuyết khổng lồ (nhảy qua)
+      addText(b.x + 30, b.y - 12, '!!', '#e53935', 26);
+      sfx('roar');
+      schedule(0.6 / Math.sqrt(pw), () => enemyShot('bigsnow', boss.x, GROUND - 17, 0, 0, { w: 34, h: 34, rolling: true, rollV: speed + 160 * boss.power }));
+    }
+  } else if (b.type === 'brachio') {
+    if (r < 0.35) {                                          // phun axit nhắm thẳng vào khủng long
+      for (let i = 0; i < 3 + (lv >= 6 ? 1 : 0); i++) schedule(i * 0.45 / pw, () => {
+        const h = brachioHead(boss), c = dinoCenter();
+        aimShot('acid', h.x, h.y, c.x, c.y, 360 * boss.power, { w: 12, h: 12 });
+        sfx('spike');
+      });
+    } else if (r < 0.7) {                                    // rung cây: lá bay thấp (nhảy) / cao (cúi)
+      for (let i = 0; i < 3 + Math.min(3, Math.floor(lv / 3)); i++) schedule(i * 0.5 / pw, () => {
+        const low = Math.random() < 0.5;
+        enemyShot('leaf', boss.x + 30, low ? GROUND - 10 : GROUND - 31, -(speed + 240 * boss.power), 0, { w: 18, h: 8 });
+      });
+    } else {                                                 // dậm chân: 2 sóng xung kích (nhảy qua)
+      for (let i = 0; i < 2; i++) schedule(i * 0.7, () => {
+        enemyShot('wave', boss.x + 40, GROUND - 8, 0, 0, { w: 26, h: 16, rolling: true, rollV: speed + 200 * boss.power });
+        shakeT = Math.max(shakeT, 0.25); sfx('boom');
+      });
+    }
   }
 }
 function updateBoss(dt) {
@@ -805,19 +915,25 @@ function burst(x, y, n, colors, power = 1) {
   }
 }
 function addText(x, y, text, color, size = 14) { texts.push({ x, y, text, color, size, life: 1.1 }); }
-function destroyObstacle(o, how) {
+function coinBurst(x, y, n) {
+  for (let i = 0; i < Math.min(n, 8); i++) coinFx.push({ x0: x + rand(-10, 10), y0: y + rand(-10, 10), t: -i * 0.06 });
+}
+// Gây sát thương lên quái (mỗi loại có lượng máu riêng); khiên húc là chết ngay
+function hitObstacle(o, how, dmg) {
   if (o.dead) return;
-  if (o.hp > 1 && how !== 'bomb' && how !== 'shield') {
-    if (o.hitT > 0) return;
-    o.hp--; o.hitT = 0.12;
-    burst(o.x + o.w / 2, o.y + o.h / 2, 6, ['#9e9e9e', 'fg'], 0.5);
-    sfx('bosshit');
-    return;
+  if (how !== 'shield') {
+    if (o.hp == null) o.hp = o.maxHp = MONSTERS[o.type].hp;
+    o.hp -= dmg; o.hitT = 0.1;
+    if (o.hp > 0.001) {
+      if (how !== 'laser') { burst(o.x + o.w / 2, o.y + o.h / 2, 6, [ITEM_INFO[how].color, 'fg'], 0.5); sfx('bosshit'); }
+      return;
+    }
   }
   o.dead = true;
   const cx = o.x + o.w / 2, cy = o.y + o.h / 2;
-  const p = how === 'shield' ? 10 : MONSTER_PTS[o.type];
-  bonus += p;
+  const p = how === 'shield' ? 10 : MONSTERS[o.type].pts, c = MONSTERS[o.type].coin;
+  bonus += p; coins += c;
+  coinBurst(cx, cy, c);
   const c2 = { cactus: '#66bb6a', slime: '#9ccc65', golem: '#9e9e9e', mole: '#a1887f', boar: '#8d6e63', wasp: '#fdd835' }[o.type] || '#ffca28';
   burst(cx, cy, 20, ['fg', c2, ITEM_INFO[how].color]);
   addText(cx, cy - 28, '+' + p, ITEM_INFO[how].color);
@@ -830,9 +946,9 @@ function explode(x, y) {
   burst(x, y, 30, ['#ffca28', '#ff7043', '#e53935', 'fg'], 1.2);
   shakeT = Math.max(shakeT, 0.25);
   sfx('boom');
-  for (const o of obstacles) if (!o.dead && circleRect(x, y, R, fullRect(o))) destroyObstacle(o, 'bomb');
+  for (const o of obstacles) if (!o.dead && circleRect(x, y, R, fullRect(o))) hitObstacle(o, 'bomb', WEAPON_DMG.bomb * upgOf('bomb', 'dmg'));
   for (const s of shots) if (!s.solid && circleRect(x, y, R, shotRect(s))) s.dead = true;
-  if (boss && circleRect(x, y, R, bossRect())) hurtBoss(6);
+  if (boss && circleRect(x, y, R, bossRect())) hurtBoss(6 * upgOf('bomb', 'dmg'));
 }
 function shotRect(s) {
   if (s.kind === 'beam') return s.t >= s.warn ? { x: 0, y: s.y - 6, w: s.x1, h: 12 } : { x: -999, y: -999, w: 0, h: 0 };
@@ -914,12 +1030,22 @@ function update(dt) {
   }
 
   // Boss
-  if (!boss && !bossPending && score() >= bossNextAt) bossPending = true;
+  const shopBusy = () => shopPending || (shopStall && !shopStall.visited);
+  if (!boss && !bossPending && !shopBusy() && score() >= bossNextAt) bossPending = true;
   if (bossPending && obstacles.length === 0) { bossPending = false; startBoss(); }
   if (boss) updateBoss(dt);
 
-  // Sinh chướng ngại (tạm ngưng khi có boss)
-  if (!boss && !bossPending) {
+  // Cửa hàng: dọn hết quái, quầy hàng chạy tới rồi khủng long dừng chân mua nâng cấp
+  if (!boss && !bossPending && !shopBusy() && score() >= shopNextAt) shopPending = true;
+  if (shopPending && obstacles.length === 0) { shopPending = false; shopStall = { x: W + 20, visited: false }; }
+  if (shopStall) {
+    shopStall.x -= move;
+    if (!shopStall.visited && shopStall.x <= dino.x - 20) openShop();
+    else if (shopStall.x < -140) shopStall = null;
+  }
+
+  // Sinh chướng ngại (tạm ngưng khi có boss hoặc sắp tới cửa hàng)
+  if (!boss && !bossPending && !shopBusy()) {
     gapLeft -= move;
     if (gapLeft <= 0) {
       spawnObstacle();
@@ -972,6 +1098,15 @@ function update(dt) {
       o.h = Math.round(up * 44); o.y = GROUND - o.h;
     }
     if (o.type === 'bat') o.y = o.baseY + Math.sin(o.t * 3) * 32;
+    if (o.type === 'goblin') {                               // yêu tinh: giơ tay rồi phi đao (thấp → nhảy, cao → cúi)
+      if (o.wind > 0) {
+        o.wind -= dt;
+        if (o.wind <= 0) {
+          enemyShot('knife', o.x - 2, Math.random() < 0.5 ? GROUND - 12 : GROUND - 31, -(speed + 200), 0, { w: 16, h: 6 });
+          sfx('throw'); o.throws++; o.cd = rand(0.9, 1.4);
+        }
+      } else if ((o.cd -= dt) <= 0 && o.throws < 2 && o.x < W - 60 && o.x > dino.x + 240) o.wind = 0.35;
+    }
   }
   for (const it of items) { it.x -= move; it.t += dt; }
   for (const b of bullets) {
@@ -1010,14 +1145,18 @@ function update(dt) {
   // Kiếm: chém mọi quái trước mặt, đánh bật đạn của boss
   if (dino.slashT > 0) {
     const zone = slashZone();
-    for (const o of obstacles) if (!o.dead && obstacleRects(o).some(r => overlap(r, zone))) destroyObstacle(o, 'sword');
+    for (const o of obstacles) {
+      if (o.dead || o.slashId === dino.slashId || !obstacleRects(o).some(r => overlap(r, zone))) continue;
+      o.slashId = dino.slashId;                              // mỗi nhát chém chỉ trúng 1 lần
+      hitObstacle(o, 'sword', WEAPON_DMG.sword * upgOf('sword', 'dmg'));
+    }
     for (const s of shots) {
       if (!s.dead && !s.solid && overlap(shotRect(s), zone)) {
         s.dead = true;
         sfx('deflect');
         burst(s.x, s.y, 6, ['#ffffff', ITEM_INFO.sword.color], 0.5);
         const d = aimDir(s.x, s.y);
-        bullets.push({ x: s.x, y: s.y, vx: d.dx * 900, vy: d.dy * 900, dmg: 3, reflected: true });
+        bullets.push({ x: s.x, y: s.y, vx: d.dx * 900, vy: d.dy * 900, dmg: 3 * upgOf('sword', 'dmg'), reflected: true });
       }
     }
   }
@@ -1025,9 +1164,9 @@ function update(dt) {
   // Laser
   if (laserOn) {
     const L = laserLine();
-    for (const o of obstacles) if (!o.dead && obstacleRects(o).some(r => segRect(L, r))) destroyObstacle(o, 'laser');
+    for (const o of obstacles) if (!o.dead && obstacleRects(o).some(r => segRect(L, r))) hitObstacle(o, 'laser', WEAPON_DMG.laser * upgOf('laser', 'dmg') * dt);
     for (const s of shots) if (!s.dead && !s.solid && segRect(L, shotRect(s))) { s.dead = true; burst(s.x, s.y, 4, ['#00e5ff', '#ffffff'], 0.4); }
-    if (boss && segRect(L, bossRect())) hurtBoss(10 * dt);
+    if (boss && segRect(L, bossRect())) hurtBoss(10 * upgOf('laser', 'dmg') * dt);
   }
 
   // Đạn của người chơi
@@ -1035,7 +1174,7 @@ function update(dt) {
     const br = b.missile ? { x: b.x - 8, y: b.y - 6, w: 16, h: 12 } : { x: b.x - 6, y: b.y - 8, w: 14, h: 16 };
     for (const o of obstacles) {
       if (o.dead || b.dead) continue;
-      if (o.type !== 'cactus' && overlap(br, fullRect(o))) { b.dead = true; destroyObstacle(o, 'gun'); }
+      if (o.type !== 'cactus' && overlap(br, fullRect(o))) { b.dead = true; hitObstacle(o, b.reflected ? 'sword' : 'gun', b.dmg); }
       else if (o.type === 'cactus' && !b.reflected && cactusRects(o).some(r => overlap({ x: b.x, y: b.y - 2, w: 8, h: 4 }, r))) {
         b.dead = true; burst(b.x, b.y, 5, ['#ffca28', 'fg'], 0.5);
       }
@@ -1073,7 +1212,7 @@ function update(dt) {
   for (const o of obstacles) {
     if (o.dead || state !== 'running') continue;
     if (!obstacleRects(o).some(r => dr.some(d => overlap(d, r)))) continue;
-    if (effects.shield > 0) destroyObstacle(o, 'shield');
+    if (effects.shield > 0) hitObstacle(o, 'shield');
     else damage();
   }
   for (const s of shots) {
@@ -1117,6 +1256,9 @@ function updateCosmetic(dt) {
   texts = texts.filter(t => t.life > 0);
   for (const b of booms) b.life -= dt;
   booms = booms.filter(b => b.life > 0);
+  for (const c of coinFx) c.t += dt;
+  coinFx = coinFx.filter(c => c.t < 0.6);
+  shopMsgT -= dt;
   shakeT = Math.max(0, shakeT - dt);
   if (state === 'over') overT += dt;
   const target = (Math.floor(pts() / 700) % 2 === 1) ? 1 : 0;
@@ -1281,7 +1423,24 @@ function drawObstacle(o) {
       ctx.fillStyle = c2; ctx.fillRect(x + 6, y, 18, 16);
       ctx.fillStyle = '#ff6f00'; ctx.fillRect(x + 8, y + 6, 4, 3); ctx.fillRect(x + 16, y + 6, 4, 3);
       ctx.fillStyle = '#616161'; ctx.fillRect(x + 8, y + 24, 6, 4); ctx.fillRect(x + 17, y + 30, 5, 3);
-      for (let i = 0; i < o.hp; i++) { ctx.fillStyle = '#e53935'; ctx.fillRect(x + 6 + i * 7, y - 6, 5, 3); }
+      break;
+    }
+    case 'goblin': {
+      const step = Math.floor(o.t * 8) % 2;
+      ctx.fillStyle = '#33691e'; ctx.fillRect(x + 6, y + 22 + step, 4, 8 - step); ctx.fillRect(x + 12, y + 22 + (1 - step), 4, 7 + step);
+      ctx.fillStyle = '#795548'; ctx.fillRect(x + 4, y + 12, 14, 11);
+      ctx.fillStyle = '#7cb342'; ctx.fillRect(x + 4, y + 2, 14, 11);
+      ctx.beginPath(); ctx.moveTo(x + 4, y + 4); ctx.lineTo(x - 4, y); ctx.lineTo(x + 4, y + 9); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(x + 18, y + 4); ctx.lineTo(x + 25, y); ctx.lineTo(x + 18, y + 9); ctx.fill();
+      ctx.fillStyle = '#ffeb3b'; ctx.fillRect(x + 5, y + 5, 3, 3); ctx.fillRect(x + 11, y + 5, 3, 3);
+      ctx.fillStyle = '#3e2723'; ctx.fillRect(x + 5, y + 10, 7, 1);
+      if (o.wind > 0) {                                      // giơ dao chuẩn bị phi
+        ctx.fillStyle = '#7cb342'; ctx.fillRect(x + 16, y + 2, 3, 11);
+        ctx.fillStyle = '#cfd8dc'; ctx.fillRect(x + 16, y - 7, 3, 9);
+      } else {
+        ctx.fillStyle = '#7cb342'; ctx.fillRect(x + 1, y + 14, 4, 3);
+        ctx.fillStyle = '#cfd8dc'; ctx.fillRect(x - 6, y + 14, 7, 2);
+      }
       break;
     }
     case 'drone':
@@ -1290,6 +1449,38 @@ function drawObstacle(o) {
       ctx.fillStyle = f ? '#ff1744' : '#ff8a80'; circle(x + 7, y + 10, 3.5);
       break;
   }
+}
+
+function drawMonster(o) {
+  if (o.hitT > 0 && o.type !== 'golem') ctx.globalAlpha = 0.5;
+  drawObstacle(o);
+  ctx.globalAlpha = 1;
+  if (o.maxHp > 1 && o.hp < o.maxHp) {                       // thanh máu quái
+    const bx = Math.round(o.x + o.w / 2 - 12), by = Math.round(o.y) - 9;
+    ctx.fillStyle = COL.dim; ctx.fillRect(bx, by, 24, 4);
+    ctx.fillStyle = '#e53935'; ctx.fillRect(bx, by, 24 * Math.max(0, o.hp / o.maxHp), 4);
+  }
+}
+function drawCoin(x, y, r) {
+  ctx.fillStyle = '#f9a825'; circle(x, y, r);
+  ctx.fillStyle = '#ffd54f'; circle(x, y, r * 0.7);
+  ctx.fillStyle = '#f9a825'; ctx.fillRect(x - r * 0.15, y - r * 0.45, r * 0.3, r * 0.9);
+}
+function drawStall(x) {
+  x = Math.round(x);
+  const top = GROUND - 92;
+  ctx.fillStyle = '#8d6e63'; ctx.fillRect(x + 6, top + 20, 6, 72); ctx.fillRect(x + 104, top + 20, 6, 72);
+  for (let i = 0; i < 6; i++) {                              // mái sọc
+    ctx.fillStyle = i % 2 ? '#ffffff' : '#e53935';
+    ctx.fillRect(x + i * 19.4, top + 8, 19.4, 14); circle(x + 9.7 + i * 19.4, top + 22, 9.7);
+  }
+  ctx.fillStyle = '#6d4c41'; ctx.fillRect(x, top + 56, 116, 36);
+  ctx.fillStyle = '#a1887f'; ctx.fillRect(x - 4, top + 52, 124, 6);
+  drawIcon('sword', x + 22, top + 42, 0.7, Math.PI / 4); drawIcon('gun', x + 50, top + 44, 0.7);
+  drawIcon('bomb', x + 76, top + 44, 0.6); drawIcon('laser', x + 100, top + 44, 0.6);
+  ctx.fillStyle = '#fbc02d'; ctx.fillRect(x + 28, top - 12, 60, 18);
+  ctx.fillStyle = '#3e2723'; ctx.font = 'bold 12px "Courier New", monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('SHOP', x + 58, top - 3);
 }
 
 function drawCloud(x, y) {
@@ -1468,6 +1659,36 @@ function drawShot(s) {
       ctx.fillStyle = '#e040fb'; circle(0, 0, 5);
       ctx.fillStyle = '#ffffff'; circle(-1, -1, 2);
       break;
+    case 'knife':
+      ctx.rotate(-s.t * 22);
+      ctx.fillStyle = '#cfd8dc'; ctx.fillRect(-8, -1.5, 10, 3);
+      ctx.fillStyle = '#5d4037'; ctx.fillRect(2, -2, 6, 4);
+      break;
+    case 'snow': case 'bigsnow': {
+      const r = s.w / 2;
+      ctx.rotate(-s.t * (s.kind === 'snow' ? 10 : 6));
+      ctx.fillStyle = '#eceff1'; circle(0, 0, r);
+      ctx.strokeStyle = '#90a4ae'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = '#b0bec5'; ctx.fillRect(-r * 0.5, -r * 0.3, r * 0.35, r * 0.35); ctx.fillRect(r * 0.15, r * 0.2, r * 0.3, r * 0.3);
+      break;
+    }
+    case 'icicle':
+      if (!s.rolling) { ctx.fillStyle = 'rgba(0,0,0,0.15)'; ctx.beginPath(); ctx.ellipse(0, GROUND - y, 7, 2, 0, 0, Math.PI * 2); ctx.fill(); }
+      else ctx.rotate(Math.PI);                              // cắm xuống đất thành gai băng
+      ctx.fillStyle = '#81d4fa';
+      ctx.beginPath(); ctx.moveTo(-5, -11); ctx.lineTo(5, -11); ctx.lineTo(0, 11); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#e1f5fe'; ctx.fillRect(-2, -10, 2, 12);
+      break;
+    case 'acid':
+      ctx.fillStyle = 'rgba(118,255,3,0.35)'; circle(0, 0, 8);
+      ctx.fillStyle = '#64dd17'; circle(0, 0, 5);
+      ctx.fillStyle = '#ccff90'; circle(-1.5, -1.5, 2);
+      break;
+    case 'leaf':
+      ctx.rotate(Math.sin(s.t * 20) * 0.4);
+      ctx.fillStyle = '#558b2f'; ctx.beginPath(); ctx.ellipse(0, 0, 9, 4, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#aed581'; ctx.fillRect(-8, -0.5, 16, 1);
+      break;
     case 'beam':
       ctx.restore(); ctx.save();
       if (s.t < s.warn) {                                    // vạch báo trước
@@ -1526,7 +1747,48 @@ function drawBoss() {
     const angry = b.charge && b.charge.phase === 'wind' && Math.floor(b.t * 12) % 2;
     drawSprite(DINO_BODY.concat(legs), x, y, 4, flash || angry ? FLASH_PAL : { '#': '#4e342e', '.': '#ff1744' }, 20);
   } else if (b.type === 'ufo') drawUFO(b, flash);
+  else if (b.type === 'mammoth') drawMammoth(b, flash);
+  else if (b.type === 'brachio') drawBrachio(b, flash);
   else drawCactusKing(b, flash);
+}
+function drawMammoth(b, flash) {
+  const x = Math.round(b.x), y = Math.round(b.y), step = Math.floor(b.t * 4) % 2;
+  const f = flash ? '#ff8a80' : '#6d4c41', d = flash ? '#ff5252' : '#4e342e';
+  ctx.fillStyle = d;                                         // chân phía sau
+  ctx.fillRect(x + 50, y + 58 + step * 2, 15, 30 - step * 2); ctx.fillRect(x + 94, y + 60 - step * 2, 15, 28 + step * 2);
+  ctx.fillStyle = f;
+  ctx.beginPath(); ctx.ellipse(x + 76, y + 44, 44, 30, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + 36, y + 30, 26, 0, Math.PI * 2); ctx.fill();
+  ctx.fillRect(x + 36, y + 60 - step * 2, 15, 28 + step * 2); ctx.fillRect(x + 80, y + 58 + step * 2, 15, 30 - step * 2);
+  ctx.fillRect(x + 12, y + 34, 14, 28); ctx.fillRect(x + 8, y + 58, 11, 14); ctx.fillRect(x + 3, y + 68, 9, 8); ctx.fillRect(x, y + 62, 5, 9);
+  ctx.fillStyle = d;                                         // lông, tai, mắt
+  for (let i = 0; i < 6; i++) ctx.fillRect(x + 56 + i * 10, y + 24 + (i % 2) * 8, 3, 16);
+  for (let i = 0; i < 4; i++) ctx.fillRect(x + 22 + i * 8, y + 2 - (i % 2) * 3, 3, 6);
+  ctx.beginPath(); ctx.ellipse(x + 50, y + 30, 9, 14, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#212121'; ctx.fillRect(x + 24, y + 22, 5, 5);
+  ctx.fillStyle = '#ff1744'; ctx.fillRect(x + 25, y + 23, 2, 2);
+  ctx.strokeStyle = flash ? '#ffffff' : '#fff8e1'; ctx.lineWidth = 6; ctx.lineCap = 'round';   // ngà
+  ctx.beginPath(); ctx.moveTo(x + 26, y + 48); ctx.quadraticCurveTo(x + 4, y + 64, x - 8, y + 40); ctx.stroke();
+  ctx.lineCap = 'butt';
+}
+function drawBrachio(b, flash) {
+  const x = Math.round(b.x), y = Math.round(b.y), step = Math.floor(b.t * 3) % 2, h = brachioHead(b);
+  const g = flash ? '#ff8a80' : '#689f38', d = flash ? '#ff5252' : '#33691e', l = flash ? '#ffcdd2' : '#aed581';
+  ctx.fillStyle = d;                                         // chân phía sau
+  ctx.fillRect(x + 64, y + 116 + step * 2, 14, 34 - step * 2); ctx.fillRect(x + 110, y + 118 - step * 2, 14, 32 + step * 2);
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.moveTo(x + 112, y + 96); ctx.quadraticCurveTo(x + 136, y + 100, x + 140, y + 134); ctx.lineTo(x + 116, y + 120); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(x + 92, y + 108, 44, 24, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillRect(x + 52, y + 118 - step * 2, 15, 32 + step * 2); ctx.fillRect(x + 96, y + 116 + step * 2, 15, 34 - step * 2);
+  ctx.strokeStyle = g; ctx.lineWidth = 18; ctx.lineCap = 'round';   // cổ dài
+  ctx.beginPath(); ctx.moveTo(x + 62, y + 100); ctx.quadraticCurveTo(x + 32, y + 70, h.x + 22, h.y + 6); ctx.stroke();
+  ctx.lineCap = 'butt';
+  ctx.beginPath(); ctx.ellipse(h.x + 14, h.y, 18, 10, -0.15, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = l;
+  for (const [sx, sy, r] of [[80, 98, 6], [100, 106, 5], [116, 98, 4], [88, 114, 4]]) circle(x + sx, y + sy, r);
+  ctx.fillStyle = '#ffeb3b'; ctx.fillRect(h.x + 10, h.y - 5, 4, 4);
+  ctx.fillStyle = '#212121'; ctx.fillRect(h.x + 10, h.y - 4, 2, 2);
+  ctx.fillStyle = d; ctx.fillRect(h.x - 2, h.y + 4, 12, 2);
 }
 function drawUFO(b, flash) {
   const cx = b.x + b.w / 2, y = b.y;
@@ -1557,6 +1819,9 @@ function drawHUD() {
     else { ctx.strokeStyle = COL.dim; ctx.lineWidth = 2; ctx.stroke(); }
     ctx.restore();
   }
+  drawCoin(W - 24, 68, 6);
+  ctx.font = 'bold 14px "Courier New", monospace'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = COL.fg; ctx.fillText(coins, W - 36, 69);
   // Thanh hiệu lực vật phẩm
   let y = 12;
   ctx.font = 'bold 13px "Courier New", monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
@@ -1605,6 +1870,65 @@ function drawHUD() {
   }
 }
 
+const SHOP_X0 = 180, SHOP_CW = 172, SHOP_Y0 = 66, SHOP_RH = 47;
+function upgText(k, stat, lv) {
+  const v = upgVal(stat, lv), n = x => String(+x.toFixed(2));
+  if (stat === 'rate') return '×' + v.toFixed(1);
+  if (stat === 'dmg') return n(WEAPON_DMG[k] * v) + (k === 'laser' ? '/s' : '');
+  if (stat === 'cd') return n(WEAPON_CD[k] * v) + 's';
+  return v + 's';
+}
+function drawShop() {
+  ctx.save();
+  ctx.fillStyle = COL.bg; ctx.fillRect(14, 8, W - 28, H - 16);
+  ctx.strokeStyle = COL.fg; ctx.lineWidth = 2; ctx.strokeRect(14, 8, W - 28, H - 16);
+  ctx.textBaseline = 'middle'; ctx.textAlign = 'center'; ctx.fillStyle = COL.fg;
+  ctx.font = 'bold 20px "Courier New", monospace'; ctx.fillText('CỬA HÀNG NÂNG CẤP VŨ KHÍ', W / 2, 29);
+  ctx.textAlign = 'right'; ctx.font = 'bold 16px "Courier New", monospace';
+  ctx.fillText(coins, W - 46, 29); drawCoin(W - 32, 29, 7);
+  ctx.font = 'bold 12px "Courier New", monospace'; ctx.fillStyle = COL.dim; ctx.textAlign = 'center';
+  UPG_STATS.forEach(([, label], c) => ctx.fillText(label, SHOP_X0 + c * SHOP_CW + SHOP_CW / 2, 55));
+  WEAPONS.forEach((k, r) => {
+    const info = ITEM_INFO[k], ty = SHOP_Y0 + r * SHOP_RH;
+    drawIcon(k, 42, ty + 20, 0.9, k === 'sword' ? Math.PI / 4 : 0);
+    ctx.textAlign = 'left'; ctx.font = 'bold 15px "Courier New", monospace'; ctx.fillStyle = info.color;
+    ctx.fillText(info.name, 64, ty + 21);
+    UPG_STATS.forEach(([stat], c) => {
+      const cx = SHOP_X0 + c * SHOP_CW, sel = shopSel.r === r && shopSel.c === c;
+      ctx.strokeStyle = sel ? info.color : COL.dim; ctx.lineWidth = sel ? 3 : 1;
+      ctx.strokeRect(cx + 3.5, ty + 1.5, SHOP_CW - 7, SHOP_RH - 6);
+      ctx.font = 'bold 12px "Courier New", monospace';
+      if (!canUpg(k, stat)) { ctx.textAlign = 'center'; ctx.fillStyle = COL.dim; ctx.fillText('KHÔNG ÁP DỤNG', cx + SHOP_CW / 2, ty + 21); return; }
+      const lv = upg[k][stat];
+      for (let i = 0; i < UPG_MAX; i++) {
+        if (i < lv) { ctx.fillStyle = info.color; ctx.fillRect(cx + 11 + i * 11, ty + 9, 8, 8); }
+        else { ctx.strokeStyle = COL.dim; ctx.lineWidth = 1; ctx.strokeRect(cx + 11.5 + i * 11, ty + 9.5, 7, 7); }
+      }
+      ctx.textAlign = 'right';
+      if (lv >= UPG_MAX) { ctx.fillStyle = '#43a047'; ctx.fillText('TỐI ĐA', cx + SHOP_CW - 11, ty + 13); }
+      else {
+        const cost = UPG_COST[lv];
+        ctx.fillStyle = coins >= cost ? COL.fg : '#e53935'; ctx.fillText(cost, cx + SHOP_CW - 22, ty + 13);
+        drawCoin(cx + SHOP_CW - 14, ty + 13, 5);
+      }
+      ctx.textAlign = 'left'; ctx.fillStyle = COL.fg;
+      ctx.fillText(upgText(k, stat, lv) + (lv < UPG_MAX ? ' → ' + upgText(k, stat, lv + 1) : ''), cx + 11, ty + 30);
+    });
+  });
+  const sel = shopSel.r === 4;                               // nút tiếp tục
+  ctx.fillStyle = sel ? COL.fg : COL.bg; ctx.fillRect(W / 2 - 90, 260, 180, 26);
+  ctx.strokeStyle = COL.fg; ctx.lineWidth = 2; ctx.strokeRect(W / 2 - 90, 260, 180, 26);
+  ctx.textAlign = 'center'; ctx.font = 'bold 14px "Courier New", monospace'; ctx.fillStyle = sel ? COL.bg : COL.fg;
+  ctx.fillText('TIẾP TỤC CHẠY ▶', W / 2, 273);
+  ctx.font = 'bold 11px "Courier New", monospace'; ctx.textAlign = 'left'; ctx.fillStyle = COL.dim;
+  ctx.fillText('←↑↓→ chọn · A/Enter mua · Esc rời', 26, 273);
+  if (shopMsgT > 0 && shopMsg) {
+    ctx.textAlign = 'right'; ctx.font = 'bold 13px "Courier New", monospace';
+    ctx.fillStyle = shopMsg.ok ? '#43a047' : '#e53935'; ctx.fillText(shopMsg.text, W - 26, 273);
+  }
+  ctx.restore();
+}
+
 function drawCenterText(lines) {
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   for (const [text, y, size, col] of lines) {
@@ -1642,9 +1966,10 @@ function draw() {
   ctx.fillRect(0, GROUND - 2, W, 1);
   for (const p of pebbles) ctx.fillRect(Math.round(p.x), Math.round(p.y), p.w, 1);
 
+  if (shopStall) drawStall(shopStall.x);
   if (boss) drawBoss();
   for (const it of items) drawItem(it);
-  for (const o of obstacles) drawObstacle(o);
+  for (const o of obstacles) drawMonster(o);
   for (const s of shots) drawShot(s);
   for (const b of bullets) {
     ctx.save(); ctx.translate(Math.round(b.x), Math.round(b.y)); ctx.rotate(Math.atan2(b.vy, b.vx));
@@ -1690,11 +2015,17 @@ function draw() {
   ctx.restore();
 
   drawHUD();
+  for (const c of coinFx) {                                  // xu bay về góc màn hình
+    const p = Math.max(0, c.t) / 0.6, e = p * p;
+    drawCoin(c.x0 + (W - 24 - c.x0) * e, c.y0 + (68 - c.y0) * e - Math.sin(p * Math.PI) * 30, 4);
+  }
+  if (state === 'shop') drawShop();
 
   if (state === 'ready') {
     drawCenterText([
       ['KHỦNG LONG CHIẾN BINH', 105, 26],
       ['Nhấn SPACE hoặc chạm màn hình để bắt đầu', 145, 15, COL.dim],
+      ['Giữ ▲ lâu nhảy cao · thả sớm nhảy thấp · ▼ trên không: lao xuống', 178, 13, COL.dim],
     ]);
   } else if (state === 'paused') {
     drawCenterText([['TẠM DỪNG', 115, 26], ['Nhấn P để tiếp tục', 150, 15, COL.dim]]);
@@ -1713,7 +2044,7 @@ function draw() {
 reset();
 let last = performance.now();
 function frame(now) {
-  const dt = Math.min(0.05, (now - last) / 1000);
+  const dt = Math.max(0, Math.min(0.05, (now - last) / 1000));   // rAF có thể báo thời điểm sớm hơn last → dt âm
   last = now;
   if (state === 'running') {
     const steps = Math.max(1, Math.ceil(dt / (1 / 120)));
@@ -1727,6 +2058,40 @@ requestAnimationFrame(frame);
 
 // ================== ĐIỀU KHIỂN ==================
 function start() { reset(); state = 'running'; jump(); }
+function openShop() {
+  shopStall.visited = true; state = 'shop';
+  shopSel = { r: 0, c: 0 }; shopMsg = null; laserOn = false;
+  for (const k in keys) keys[k] = false;
+  sfx('pickup');
+}
+function leaveShop() {
+  state = 'running'; last = performance.now();
+  shopNextAt = (Math.floor(score() / SHOP_EVERY) + 1) * SHOP_EVERY;
+  dino.invT = 1.2; gapLeft = Math.max(gapLeft, 500);
+  sfx('unlock');
+}
+function buyUpg(k, stat) {
+  const lv = upg[k][stat];
+  if (!canUpg(k, stat) || lv >= UPG_MAX) return;
+  if (coins < UPG_COST[lv]) { shopMsg = { text: 'KHÔNG ĐỦ XU!', ok: false }; shopMsgT = 1.2; sfx('expire'); return; }
+  coins -= UPG_COST[lv]; upg[k][stat]++;
+  shopMsg = { text: 'ĐÃ NÂNG CẤP ' + ITEM_INFO[k].name + '!', ok: true }; shopMsgT = 1.2;
+  sfx('pickup');
+}
+function shopKey(c) {
+  if (c === 'ArrowUp' || c === 'KeyW') shopSel.r = (shopSel.r + 4) % 5;
+  else if (c === 'ArrowDown' || c === 'KeyS') shopSel.r = (shopSel.r + 1) % 5;
+  else if (c === 'ArrowLeft') shopSel.c = (shopSel.c + 3) % 4;
+  else if (c === 'ArrowRight' || c === 'KeyD') shopSel.c = (shopSel.c + 1) % 4;
+  else if (c === 'Space' || c === 'Enter' || c === 'KeyA') {
+    if (shopSel.r === 4) leaveShop(); else buyUpg(WEAPONS[shopSel.r], UPG_STATS[shopSel.c][0]);
+  } else if (c === 'Escape') leaveShop();
+}
+function shopClick(px, py) {
+  if (py >= 258 && py <= 288 && Math.abs(px - W / 2) <= 92) { leaveShop(); return; }
+  const r = Math.floor((py - SHOP_Y0) / SHOP_RH), c = Math.floor((px - SHOP_X0) / SHOP_CW);
+  if (r >= 0 && r < 4 && c >= 0 && c < 4) { shopSel = { r, c }; buyUpg(WEAPONS[r], UPG_STATS[c][0]); }
+}
 function pressJump() {
   ensureAudio();
   if (state === 'ready') start();
@@ -1739,11 +2104,12 @@ const KEYMAP = {
   ArrowLeft: 'left', ArrowRight: 'right',
   KeyA: 'attack',
 };
-window.addEventListener('keydown', e => {
-  const c = e.code, act = KEYMAP[c];
-  if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(c)) e.preventDefault();
+function keyDown(c) {
+  const act = KEYMAP[c];
+  if (state === 'shop') { if (act === 'jump') keys.jump = true; shopKey(c); return; }   // giữ cờ nhảy để không bật nhảy khi vừa rời cửa hàng
   if (act === 'jump') { if (!keys.jump) pressJump(); keys.jump = true; }
   else if (act) {
+    if (act === 'down' && !keys.down) fastFall();
     keys[act] = true;
     if (act === 'attack' && state === 'running') attack();
   }
@@ -1752,12 +2118,42 @@ window.addEventListener('keydown', e => {
     if (state === 'running') state = 'paused';
     else if (state === 'paused') { state = 'running'; last = performance.now(); }
   }
+}
+function keyUp(c) { const act = KEYMAP[c]; if (act) keys[act] = false; }
+window.addEventListener('keydown', e => {
+  if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
+  keyDown(e.code);
 });
-window.addEventListener('keyup', e => { const act = KEYMAP[e.code]; if (act) keys[act] = false; });
-canvas.addEventListener('pointerdown', e => { e.preventDefault(); keys.jump = true; pressJump(); });
-window.addEventListener('pointerup', () => { keys.jump = false; });
+window.addEventListener('keyup', e => keyUp(e.code));
+// Nút trên màn hình: bấm giữ y như giữ phím (nhiều ngón cùng lúc được)
+for (const btn of document.querySelectorAll('#pad button')) {
+  const code = btn.dataset.key;
+  btn.addEventListener('pointerdown', e => {
+    e.preventDefault(); ensureAudio();
+    try { btn.setPointerCapture(e.pointerId); } catch (err) {}
+    btn.classList.add('on'); keyDown(code);
+  });
+  const up = () => { if (btn.classList.contains('on')) { btn.classList.remove('on'); keyUp(code); } };
+  btn.addEventListener('pointerup', up);
+  btn.addEventListener('pointercancel', up);
+  btn.addEventListener('lostpointercapture', up);
+  btn.addEventListener('contextmenu', e => e.preventDefault());
+}
+canvas.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  if (state === 'shop') {
+    const r = canvas.getBoundingClientRect();
+    shopClick((e.clientX - r.left) / r.width * W, (e.clientY - r.top) / r.height * H);
+    return;
+  }
+  try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+  keys.jump = true; pressJump();
+});
+canvas.addEventListener('pointerup', () => { keys.jump = false; });       // chỉ ngón chạm màn hình mới huỷ nhảy, không ảnh hưởng nút khác
+canvas.addEventListener('pointercancel', () => { keys.jump = false; });
 window.addEventListener('blur', () => {
   for (const k in keys) keys[k] = false;
+  for (const b of document.querySelectorAll('#pad .on')) b.classList.remove('on');
   if (state === 'running') state = 'paused';
 });
 </script>

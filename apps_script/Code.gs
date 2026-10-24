@@ -7,6 +7,9 @@
  *   2. Chạy hàm caiDatLanDau() một lần -> tạo thư mục trên Drive, in ra khóa API.
  *   3. Deploy > New deployment > Web app: Execute as "Me", Who has access "Anyone".
  *
+ * Bài nộp: 1 phiếu Word + Bài 1..5 (mỗi bài 3 tệp .py của A, B, C) + Hidden (3 tệp .py, không bắt buộc).
+ * Tệp được lưu với TÊN ĐỘI ĐẶT (đề chấm điểm cả quy cách đặt tên <MaDoi>_<A/B/C>_BaiN.py).
+ *
  * Lưu trữ:
  *   Drive:  OlympicAI_Vong1/bai_nop/<MÃ>/   mỗi đội MỘT thư mục: lần nộp thành công sau ĐÈ lên bài trước
  *           (file bài + kiem_tra.json, ket_qua.json, duyet.json của bài mới nhất). Lần nộp lỗi không đè.
@@ -16,8 +19,9 @@
 var TEN_THU_MUC_GOC = 'OlympicAI_Vong1';
 var MUI_GIO = 'Asia/Ho_Chi_Minh';
 var DUNG_LUONG_TOI_DA = 2 * 1024 * 1024;  // 2 MB mỗi file
-var THONG_DIEP_DUNG = 'UNETI 70 NAM VUON XA';
-var DUOI_CODE = ['.py', '.ipynb'];
+var SO_FILE_MOI_O = 3;                     // mỗi ô bài / Hidden: 3 tệp của A, B, C
+var DUOI_CODE = ['.py'];
+var TEN_FILE_HE_THONG = ['kiem_tra.json', 'ket_qua.json', 'duyet.json'];
 
 function props_() {
   return PropertiesService.getScriptProperties();
@@ -42,16 +46,24 @@ function caiDatLanDau() {
 
 // ---------- File thống kê (Google Sheet, tải về được dạng Excel) ----------
 
+// Cột mới chỉ thêm vào CUỐI để file thống kê đã tạo từ bản trước vẫn đúng cột (tiêu đề được cập nhật khi mở).
 var COT_THONG_KE = ['Mã đội', 'Tên đội', 'Lần nộp gần nhất', 'Kết quả lần gần nhất', 'Lý do nộp lỗi',
   'Số lần nộp', 'Số lần nộp thành công', 'Bản được chấm (nộp lúc)', 'File đã nộp', 'Thư mục bài',
-  'Trạng thái chấm', 'Tổng điểm', 'Bài 1', 'Bài 2', 'Bài 3', 'Bài 4', 'Bài 5'];
+  'Trạng thái chấm', 'Tổng điểm', 'Bài 1', 'Bài 2', 'Bài 3', 'Bài 4', 'Bài 5', 'Hidden Challenge'];
 var TEN_TRANG_THAI = {cho_cham: 'Chờ chấm', dang_cham: 'Đang chấm', da_cham: 'Đã chấm', loi: 'Lỗi khi chấm',
   bo_qua: 'Bỏ qua'};
 
 function bangThongKe_() {
   var p = props_();
   var id = p.getProperty('ID_SHEET');
-  if (id) return SpreadsheetApp.openById(id).getSheets()[0];
+  if (id) {
+    var cu = SpreadsheetApp.openById(id).getSheets()[0];
+    var tieuDe = cu.getRange(1, 1, 1, COT_THONG_KE.length).getValues()[0];
+    if (tieuDe.join('|') !== COT_THONG_KE.join('|')) {
+      cu.getRange(1, 1, 1, COT_THONG_KE.length).setValues([COT_THONG_KE]).setFontWeight('bold');
+    }
+    return cu;
+  }
   var ss = SpreadsheetApp.create('Thong_ke_nop_bai_Vong1');
   DriveApp.getFileById(ss.getId()).moveTo(DriveApp.getFolderById(p.getProperty('ID_GOC')));
   var sh = ss.getSheets()[0];
@@ -123,7 +135,6 @@ function nopBai(p) {
     return {o: t.o, ten: String(t.ten || ''), bytes: Utilities.base64Decode(t.b64 || '')};
   });
   var loi = loiTep_(tep);
-  var hidden = false;
   if (!loi.length) {
     var phieu = null;
     try {
@@ -136,11 +147,10 @@ function nopBai(p) {
       loi.push('Phiếu trả lời không đọc được hoặc không đúng mẫu của Ban Tổ chức.');
     } else {
       loi = loi.concat(doiChieuPhieu_(phieu, ma, ten));
-      hidden = chuanNhan_(phieu.thong_diep) === THONG_DIEP_DUNG;
     }
   }
   var luc = bayGio_();
-  luuLanNop_(ma, ten, luc, tep, loi.length ? loi : null, hidden && !loi.length);
+  luuLanNop_(ma, ten, luc, tep, loi.length ? loi : null);
   if (loi.length) return {ok: false, loi: loi};
   return {ok: true, ma_doi: ma, ten_doi: ten, thoi_gian: luc};
 }
@@ -150,11 +160,41 @@ function duoi_(ten) {
   return m ? m[0] : '';
 }
 
-/** Lỗi về file của từng ô nộp. tep: [{o, ten, bytes hoặc kich_thuoc}] */
+/** Tên tệp đội đặt, chỉ bỏ đường dẫn và ký tự không hợp lệ. */
+function tenAnToan_(ten) {
+  var t = String(ten || '').replace(/\\/g, '/').split('/').pop().trim();
+  return t.replace(/[<>:"\/\\|?*\x00-\x1f]/g, '_').slice(0, 120) || 'khong_ten';
+}
+
+function tenO_(o) {
+  return o === 'phieu' ? 'Phiếu trả lời' : o === 'hidden' ? 'Hidden Challenge' : 'Bài ' + o;
+}
+
+/** Lỗi về file của từng ô nộp. tep: [{o: 'phieu' | 1..5 | 'hidden', ten, bytes hoặc kich_thuoc}] */
 function loiTep_(tep) {
   var loi = [];
+  var demO = {}, demTen = {};
   tep.forEach(function (t) {
-    var tenO = t.o === 'phieu' ? 'Phiếu trả lời' : 'Bài ' + t.o;
+    demO[t.o] = (demO[t.o] || 0) + 1;
+    var k = tenAnToan_(t.ten).toLowerCase();
+    demTen[k] = (demTen[k] || 0) + 1;
+  });
+  Object.keys(demO).forEach(function (o) {
+    if (o === 'phieu' && demO[o] > 1) loi.push('Ô Phiếu trả lời chỉ nhận 1 tệp.');
+    if (o !== 'phieu' && demO[o] > SO_FILE_MOI_O) {
+      loi.push('Ô ' + tenO_(o === 'hidden' ? o : Number(o)) + ' chỉ nhận tối đa ' + SO_FILE_MOI_O +
+               ' tệp (A, B, C), đã chọn ' + demO[o] + ' tệp.');
+    }
+  });
+  var trung = Object.keys(demTen).filter(function (k) { return demTen[k] > 1; });
+  if (trung.length) loi.push('Có tệp trùng tên: ' + trung.join(', ') + ' - mỗi tệp phải có tên riêng.');
+  tep.forEach(function (t) {
+    if (TEN_FILE_HE_THONG.indexOf(tenAnToan_(t.ten).toLowerCase()) >= 0) {
+      loi.push('Tên tệp ' + t.ten + ' trùng tên tệp của hệ thống, hãy đổi tên.');
+    }
+  });
+  tep.forEach(function (t) {
+    var tenO = tenO_(t.o);
     var choPhep = t.o === 'phieu' ? ['.docx'] : DUOI_CODE;
     var kichThuoc = t.bytes ? t.bytes.length : t.kich_thuoc;
     if (choPhep.indexOf(duoi_(t.ten)) < 0) {
@@ -182,19 +222,19 @@ function thuMucDoi_(ma) {
  * Lần nộp thành công: ĐÈ bài cũ của đội (bỏ hết file cũ, kể cả kết quả chấm cũ) -> thư mục đội chỉ còn bài mới nhất.
  * Lần nộp lỗi: không đụng tới bài đang có, chỉ ghi lại để admin và file thống kê biết.
  */
-function luuLanNop_(ma, ten, luc, tep, loi, hidden) {
+function luuLanNop_(ma, ten, luc, tep, loi) {
   var p = props_();
   var gon = luc.replace(/[-:]/g, '').replace('T', '-');
   var id = gon + '-' + ma + '-' + Utilities.getUuid().slice(0, 6);
   // ms: thứ tự nộp chính xác tới mili giây (hai lần nộp trong cùng một giây vẫn phân biệt được)
-  var ghi = {id: id, ma_doi: ma, ten_doi: ten, thoi_gian: luc, ms: new Date().getTime(), loi: loi, hidden: hidden,
+  var ghi = {id: id, ma_doi: ma, ten_doi: ten, thoi_gian: luc, ms: new Date().getTime(), loi: loi,
              thu_muc: '', cac_file: []};
   if (!loi) {
     var thuMuc = thuMucDoi_(ma);
     var cu = thuMuc.getFiles();
     while (cu.hasNext()) cu.next().setTrashed(true);
     tep.forEach(function (t) {
-      var tenFile = ma + '_' + (t.o === 'phieu' ? 'PhieuTraLoi' : 'Bai' + t.o) + duoi_(t.ten);
+      var tenFile = tenAnToan_(t.ten);
       thuMuc.createFile(Utilities.newBlob(t.bytes, 'application/octet-stream', tenFile));
       ghi.cac_file.push(tenFile);
     });
@@ -225,7 +265,7 @@ function luuLanNop_(ma, ten, luc, tep, loi, hidden) {
         h['File đã nộp'] = ghi.cac_file.join(', ');
         h['Thư mục bài'] = 'https://drive.google.com/drive/folders/' + ghi.thu_muc;
         h['Trạng thái chấm'] = 'Chưa chấm';
-        ['Tổng điểm', 'Bài 1', 'Bài 2', 'Bài 3', 'Bài 4', 'Bài 5'].forEach(function (c) { h[c] = ''; });
+        ['Tổng điểm', 'Bài 1', 'Bài 2', 'Bài 3', 'Bài 4', 'Bài 5', 'Hidden Challenge'].forEach(function (c) { h[c] = ''; });
       }
     });
   } finally {
@@ -278,21 +318,19 @@ function chu_(xml) {
   return ra.join('').replace(/\s+/g, ' ').trim();
 }
 
-/** Lấy mã đội, tên đội, thông điệp cuối và kiểm tra có bảng kết quả 5 bài (đúng mẫu BTC). */
+/** Bỏ dòng chấm của mẫu ('....', '…', '___'), ô đánh dấu, khoảng trắng thừa. */
+function sach_(s) {
+  return String(s || '').replace(/\.{2,}|…+|_{2,}|[☐☑☒]/g, ' ').replace(/\s+/g, ' ').replace(/^[\s:]+|[\s:]+$/g, '');
+}
+
+/** Lấy mã đội, tên đội và kiểm tra có bảng kết quả 5 bài (đúng mẫu BTC). */
 function docPhieu_(xml) {
-  var kq = {ma_doi: '', ten_doi: '', thong_diep: '', co_bang_ket_qua: false};
+  var kq = {ma_doi: '', ten_doi: '', co_bang_ket_qua: false};
   var than = (xml.match(/<w:body>([\s\S]*)<\/w:body>/) || [null, ''])[1];
-  var re = /<w:tbl[ >][\s\S]*?<\/w:tbl>|<w:p[ >][\s\S]*?<\/w:p>/g;
-  var doanTruoc = '';
+  var re = /<w:tbl[ >][\s\S]*?<\/w:tbl>/g;
   var m;
   while ((m = re.exec(than))) {
-    var khoi = m[0];
-    if (khoi.indexOf('<w:tbl') !== 0) {
-      var t = chu_(khoi);
-      if (t) doanTruoc = chuanNhan_(t);
-      continue;
-    }
-    var hang = (khoi.match(/<w:tr[ >][\s\S]*?<\/w:tr>/g) || []).map(function (tr) {
+    var hang = (m[0].match(/<w:tr[ >][\s\S]*?<\/w:tr>/g) || []).map(function (tr) {
       return (tr.match(/<w:tc[ >][\s\S]*?<\/w:tc>/g) || []).map(chu_);
     });
     if (!hang.length) continue;
@@ -300,16 +338,18 @@ function docPhieu_(xml) {
     var co = function (chuoi) { return tieuDe.some(function (c) { return c.indexOf(chuoi) >= 0; }); };
     if (co('KET QUA A') && co('CHECKPOINT')) {
       kq.co_bang_ket_qua = true;
-    } else if (hang.length === 1 && hang[0].length === 1 && doanTruoc.indexOf('THONG DIEP CUOI CUNG') >= 0) {
-      kq.thong_diep = hang[0][0];
-    } else {
-      hang.forEach(function (h) {
-        if (h.length >= 2 && chuanNhan_(h[0]).indexOf('MA DOI') === 0) {
-          kq.ma_doi = h[1];
-          if (h.length >= 4 && chuanNhan_(h[2]).indexOf('TEN DOI') === 0) kq.ten_doi = h[3];
-        }
-      });
+      continue;
     }
+    hang.forEach(function (h) {
+      if (h.length < 2) return;
+      var nhan = chuanNhan_(h[0]);
+      if (nhan.indexOf('MA DOI') === 0) {
+        kq.ma_doi = sach_(h[1]);
+        if (h.length >= 4 && chuanNhan_(h[2]).indexOf('TEN DOI') === 0) kq.ten_doi = sach_(h[3]);
+      } else if (nhan.indexOf('TEN DOI') === 0) {
+        kq.ten_doi = sach_(h[1]);
+      }
+    });
   }
   return kq;
 }
@@ -426,7 +466,7 @@ var API_ = {
     try {
       var ghi = banGhi_(yc.id);
       Object.keys(yc.sua || {}).forEach(function (k) {
-        if (['id', 'ma_doi', 'thoi_gian', 'thu_muc', 'cac_file', 'loi', 'hidden', 'thay_the'].indexOf(k) < 0) {
+        if (['id', 'ma_doi', 'thoi_gian', 'ms', 'thu_muc', 'cac_file', 'loi', 'thay_the'].indexOf(k) < 0) {
           ghi[k] = yc.sua[k];
         }
       });
@@ -438,6 +478,7 @@ var API_ = {
           var coDiem = ghi.tt === 'da_cham' && ghi.tong !== undefined && ghi.tong !== null;
           h['Tổng điểm'] = coDiem ? ghi.tong : '';
           for (var i = 1; i <= 5; i++) h['Bài ' + i] = coDiem && ghi.diem_bai ? ghi.diem_bai[i - 1] : '';
+          h['Hidden Challenge'] = coDiem ? (ghi.hidden_ht ? 'Hoàn thành' : 'Chưa hoàn thành') : '';
         });
       }
       return true;

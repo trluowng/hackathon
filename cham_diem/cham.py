@@ -5,9 +5,13 @@ Cách dùng:
 
 Không truyền --phieu thì tự lấy file Word (.docx) nằm trong thư mục bài nộp.
 
-Đội được tổ chức file tùy ý: mỗi phần một file, gộp A/B/C của một bài, hay gộp cả 5 bài,
-.py hoặc .ipynb, đặt tên bất kỳ. Phần nào nằm ở file nào được xác định bằng dữ liệu đề cho
-xuất hiện trong code (tên file chỉ dùng làm gợi ý khi không tìm thấy dữ liệu).
+Đề yêu cầu mỗi phần một tệp <MaDoi>_<A/B/C>_BaiN.py (+ <MaDoi>_Hidden_<A/B/C>.py), nhưng engine vẫn
+chấm được file đặt tên khác, gộp nhiều phần, .ipynb: phần nào nằm ở file nào được xác định bằng dữ liệu
+đề cho xuất hiện trong code (tên file chỉ dùng làm gợi ý khi không tìm thấy dữ liệu). Sai quy cách tệp
+chỉ mất điểm "tệp" của bài đó (xem _kiem_tra_tep).
+
+Mỗi bài 5 điểm: A, B, C, Checkpoint + mảnh khóa (theo phiếu, code để xác thực) và 1 điểm tệp
+(đủ 3 tệp đặt tên đúng, chạy được). Hidden Challenge không cộng điểm, chỉ xác nhận hoàn thành.
 
 Mỗi phần A/B/C của mỗi bài (1 điểm) phải qua đủ:
   1. Kiểm tra tĩnh các ràng buộc đề trên vùng code của phần đó.
@@ -27,7 +31,8 @@ import unicodedata
 from collections import Counter
 
 from chay_an_toan import chay
-from de_bai import DAP_AN_K, DE_THI, HIDDEN, MANH_KHOA, MAT_KHAU, THONG_DIEP, TU_KHOA, tinh_checkpoint
+from de_bai import CAC_BAI, DAP_AN_K, DE_THI, HIDDEN, HIDDEN_BAI, MANH_KHOA, MAT_KHAU, THONG_DIEP, TU_KHOA, \
+    tinh_checkpoint
 from doc_phieu_word import LoiDocPhieu, doc_phieu
 from kiem_tra_tinh import CANH_BAO, LOI
 from nap_ma_nguon import LoiNapFile, nap
@@ -36,7 +41,9 @@ from thay_du_lieu import _tuple_hoa, cac_literal, node_du_lieu, thay_du_lieu, ti
 from thay_du_lieu import co_du_lieu as co_du_lieu_phan
 
 MAU_TEN = re.compile(r"^(?P<doi>.+?)_(?P<tv>[ABC])_Bai(?P<bai>[1-5])\.(?P<duoi>py|ipynb)$", re.I)
-CAC_PHAN = [(bai, tv) for bai in range(1, 6) for tv in "ABC"]
+MAU_TEN_HIDDEN = re.compile(r"hidden[_\- ]?(?P<tv>[ABC])(?![A-Za-z])", re.I)
+CAC_PHAN = [(bai, tv) for bai in CAC_BAI for tv in "ABC"]
+CAC_PHAN_HIDDEN = [(HIDDEN_BAI, tv) for tv in "ABC"]
 
 DAT = "DAT"
 KHONG_DAT = "KHONG_DAT"
@@ -69,8 +76,26 @@ def _cac_so(dong):
     return [_chuan_so(s) for s in re.findall(r"-?\d+(?:\.\d+)?", dong)]
 
 
-def doc_gia_tri(stdout, chu):
-    """Ưu tiên dòng dạng 'A = 21'; nếu không có thì lấy số cuối cùng được in ra."""
+def _chuan_chu(s):
+    """Kết quả dạng chuỗi để so: bỏ khoảng trắng, chữ hoa ('70 nam' -> '70NAM')."""
+    return re.sub(r"\s+", "", s or "").upper()
+
+
+def co_output(stdout, phan):
+    return bool(stdout.strip()) if phan.la_chuoi else bool(_cac_so(stdout))
+
+
+def doc_gia_tri(stdout, chu, la_chuoi=False):
+    """Ưu tiên dòng dạng 'A = 21' (chuỗi: 'MANH_A = UNETI'); nếu không có thì lấy số cuối cùng được in ra
+    (chuỗi: phần sau dấu ':' / '=' của dòng cuối, hoặc cả dòng cuối)."""
+    if la_chuoi:
+        mau = re.findall(r"^\s*(?:M[AẢ]NH[ _]?)?%s\s*[=:]\s*(.+?)\s*$" % chu, stdout, re.M | re.I)
+        if mau:
+            return _chuan_chu(mau[-1]), "dung_mau"
+        dong = [d for d in stdout.splitlines() if d.strip()]
+        if not dong:
+            return None, None
+        return _chuan_chu(re.split(r"[:=]", dong[-1])[-1]) or _chuan_chu(dong[-1]), "so_cuoi"
     mau = re.findall(r"^\s*%s\s*[=:]\s*(-?\d+(?:\.\d+)?)\s*$" % chu, stdout, re.M | re.I)
     if mau:
         return _chuan_so(mau[-1]), "dung_mau"
@@ -84,7 +109,11 @@ def so_sanh_output(goc, moi, dap_an, mong_doi):
     """Có dòng output nào đổi từ đáp án đề (bản gốc) sang đáp án test ẩn (bản đã thay dữ liệu) không.
 
     Không phụ thuộc thí sinh in theo định dạng nào hay file in kết quả của bao nhiêu phần.
+    Kết quả dạng chuỗi (Hidden): bản gốc in ra đáp án đề và bản mới in ra đáp án test ẩn.
     """
+    if isinstance(dap_an, str):
+        return (any(dap_an in _chuan_chu(d) for d in goc.splitlines())
+                and any(mong_doi in _chuan_chu(d) for d in moi.splitlines()))
     a, b = goc.splitlines(), moi.splitlines()
 
     def khung(dong):
@@ -113,9 +142,9 @@ def cham_phan(duong_dan, bai, tv, cac_phan_trong_file=()):
     phan = DE_THI[bai][tv]
     khac = [p for p in cac_phan_trong_file if p != (bai, tv)]
     kq = {"file": os.path.basename(duong_dan),
-          "bo_cuc": "gộp chung với " + ", ".join("Bài %d %s" % p for p in khac) if khac else "file riêng",
+          "bo_cuc": "gộp chung với " + ", ".join("Bài %s %s" % p for p in khac) if khac else "file riêng",
           "mong_doi": phan.dap_an, "ket_qua": None,
-          "diem": 0, "trang_thai": KHONG_DAT, "nhom_loi": None, "output_dung": False,
+          "diem": 0, "trang_thai": KHONG_DAT, "nhom_loi": None, "output_dung": False, "chay_duoc": False,
           "ly_do": [], "canh_bao": []}
     nhom_gap = []
 
@@ -167,12 +196,13 @@ def cham_phan(duong_dan, bai, tv, cac_phan_trong_file=()):
     ten_bien = [tv] + ([phan.giu_nguyen] if phan.giu_nguyen else [])
     for i, (cach_chay, ma_nguon, cay_chay, chi_mot_phan) in enumerate(lua_chon):
         r = chay(ma_nguon, bai_lam.la_notebook, ten_bien, THOI_GIAN_TOI_DA)
-        if (r.loi or not _cac_so(r.stdout)) and i < len(lua_chon) - 1:
+        if (r.loi or not co_output(r.stdout, phan)) and i < len(lua_chon) - 1:
             continue
         break
     if khac:
         kq["cach_chay"] = cach_chay
     kq["stdout"] = r.stdout[-3000:]
+    kq["chay_duoc"] = r.loi is None and co_output(r.stdout, phan)
     kq["tim_thay_du_lieu"] = sorted(tim_du_lieu(cay, phan.dau_vao))
     for o in r.loi_o:
         kq["canh_bao"].append("Ô code thứ %d lỗi khi chạy lại từ đầu (%s) - %s" % (
@@ -184,10 +214,10 @@ def cham_phan(duong_dan, bai, tv, cac_phan_trong_file=()):
     if r.loi:
         loi("loi_chay", "Chạy lỗi: " + _dong_cuoi(r.loi))
         kq["loi_chay"] = r.loi
-    elif not _cac_so(r.stdout):
+    elif not co_output(r.stdout, phan):
         loi("khong_in", "Không in ra kết quả")
     else:
-        gia_tri_doc, cach_doc = doc_gia_tri(r.stdout, tv) if chi_mot_phan else (None, None)
+        gia_tri_doc, cach_doc = doc_gia_tri(r.stdout, tv, phan.la_chuoi) if chi_mot_phan else (None, None)
 
         if chi_mot_phan and phan.giu_nguyen and phan.giu_nguyen in r.bien:
             try:
@@ -210,7 +240,7 @@ def cham_phan(duong_dan, bai, tv, cac_phan_trong_file=()):
                 t["ap_dung"] = True
                 t["dat"] = rt.loi is None and so_sanh_output(r.stdout, rt.stdout, phan.dap_an, t["mong_doi"])
                 if chi_mot_phan:
-                    t["thuc_te"] = doc_gia_tri(rt.stdout, tv)[0]
+                    t["thuc_te"] = doc_gia_tri(rt.stdout, tv, phan.la_chuoi)[0]
                 if rt.loi:
                     t["loi"] = _dong_cuoi(rt.loi)
             kq["test_an"].append(t)
@@ -233,8 +263,8 @@ def cham_phan(duong_dan, bai, tv, cac_phan_trong_file=()):
                 kq["canh_bao"].append("Không in theo dạng '%s = <giá trị>', đã lấy số cuối cùng trong output" % tv)
 
         if bai_lam.la_notebook and bai_lam.output_da_luu and not khac:
-            da_luu, _ = doc_gia_tri(bai_lam.output_da_luu, tv)
-            hien_tai = doc_gia_tri(r.stdout, tv)[0]
+            da_luu, _ = doc_gia_tri(bai_lam.output_da_luu, tv, phan.la_chuoi)
+            hien_tai = doc_gia_tri(r.stdout, tv, phan.la_chuoi)[0]
             if da_luu is not None and da_luu != hien_tai:
                 kq["canh_bao"].append("Output lưu sẵn trong notebook (%s) khác kết quả chạy lại (%s) - "
                                       "output có thể đã bị sửa tay" % (da_luu, hien_tai))
@@ -256,22 +286,30 @@ def cham_phan(duong_dan, bai, tv, cac_phan_trong_file=()):
 
 
 def _goi_y_tu_ten(ten_file):
-    """Các phần mà tên file gợi ý tới, vd D01_A_Bai1.py, bai_4_A.py, Bai2.ipynb, thanh_vien_C.py."""
+    """Các phần mà tên file gợi ý tới, vd D01_A_Bai1.py, bai_4_A.py, Bai2.ipynb, D01_Hidden_B.py."""
     m = MAU_TEN.match(ten_file)
     if m:
         return {(int(m["bai"]), m["tv"].upper())}
     goc = os.path.splitext(ten_file)[0]
+    if "hidden" in goc.lower():
+        m = MAU_TEN_HIDDEN.search(goc)
+        return {(HIDDEN_BAI, m["tv"].upper())} if m else set(CAC_PHAN_HIDDEN)
     cac_bai = {int(b) for b in re.findall(r"b[aà]i\s*[_\- ]?\s*([1-5])", goc, re.I)}
     cac_tv = {t.upper() for t in re.findall(r"(?:^|[_\-\s.])([ABCabc])(?=[_\-\s.]|$)", goc)}
     if not cac_bai and not cac_tv:
         return set()
-    return {(b, t) for b in (cac_bai or range(1, 6)) for t in (cac_tv or "ABC")}
+    return {(b, t) for b in (cac_bai or CAC_BAI) for t in (cac_tv or "ABC")}
 
 
 def _chuan_thong_diep(s):
     s = (s or "").replace("đ", "d").replace("Đ", "D")
     s = "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn")
     return re.sub(r"[^A-Za-z0-9]+", " ", s).strip().upper()
+
+
+def _chuan_manh(s):
+    """So mảnh / thông điệp Hidden: không dấu, bỏ dấu câu và khoảng trắng ('UNETI – 70 NĂM' -> 'UNETI70NAM')."""
+    return _chuan_thong_diep(s).replace(" ", "")
 
 
 def _so_hoac_none(x):
@@ -281,8 +319,16 @@ def _so_hoac_none(x):
         return None
 
 
+def ten_phan(p):
+    return "Hidden %s" % p[1] if p[0] == HIDDEN_BAI else "Bài %d %s" % p
+
+
 def tim_bo_cuc(thu_muc):
-    """Xác định phần nào nằm ở file nào. Trả về ({(bài, tv): đường dẫn}, cảnh báo, file không xác định)."""
+    """Xác định phần nào nằm ở file nào. Trả về ({(bài, tv): đường dẫn}, cảnh báo, file không xác định).
+
+    Bài là 1..5 hoặc HIDDEN_BAI. File Hidden (có dữ liệu Hidden, hoặc tên chứa 'hidden' mà không có dữ liệu
+    của 5 bài) chỉ được xét cho Hidden và ngược lại, để file Hidden không bị chấm nhầm thành bài thi.
+    """
     cac_file = []
     for goc, thu_muc_con, ten_cac_file in os.walk(thu_muc):
         thu_muc_con[:] = [d for d in thu_muc_con if not d.startswith(".") and d != "__pycache__"]
@@ -291,27 +337,35 @@ def tim_bo_cuc(thu_muc):
     co_du_lieu = {}
     for duong_dan in cac_file:
         try:
-            literal = cac_literal(ast.parse(nap(duong_dan).ma_nguon))  # duyệt code một lần cho cả 15 phần
+            literal = cac_literal(ast.parse(nap(duong_dan).ma_nguon))  # duyệt code một lần cho cả 18 phần
         except (LoiNapFile, SyntaxError):
             continue
-        for p in CAC_PHAN:
-            if co_du_lieu_phan(literal, DE_THI[p[0]][p[1]].dau_vao):
-                co_du_lieu.setdefault(p, []).append(duong_dan)
+        co_du_lieu[duong_dan] = {p for p in CAC_PHAN + CAC_PHAN_HIDDEN
+                                 if co_du_lieu_phan(literal, DE_THI[p[0]][p[1]].dau_vao)}
 
     goi_y = {f: _goi_y_tu_ten(os.path.basename(f)) for f in cac_file}
+
+    def la_hidden(f):
+        du_lieu = co_du_lieu.get(f, set())
+        if any(p[0] == HIDDEN_BAI for p in du_lieu):
+            return True
+        return not du_lieu and any(p[0] == HIDDEN_BAI for p in goi_y[f])
+
+    nhom = {False: [f for f in cac_file if not la_hidden(f)], True: [f for f in cac_file if la_hidden(f)]}
     vi_tri, canh_bao = {}, []
-    for p in CAC_PHAN:
-        ung_vien = co_du_lieu.get(p, [])
-        if ung_vien:
-            uu_tien = [f for f in ung_vien if p in goi_y[f]] or ung_vien
-            vi_tri[p] = uu_tien[0]
-            if len(ung_vien) > 1:
-                canh_bao.append("Bài %d %s có trong nhiều file (%s), chấm file %s" % (
-                    p[0], p[1], ", ".join(os.path.basename(f) for f in ung_vien), os.path.basename(uu_tien[0])))
-        else:
-            theo_ten = [f for f in cac_file if p in goi_y[f]]
-            if theo_ten:
-                vi_tri[p] = theo_ten[0]
+    for hidden, cac_phan in ((False, CAC_PHAN), (True, CAC_PHAN_HIDDEN)):
+        for p in cac_phan:
+            ung_vien = [f for f in nhom[hidden] if p in co_du_lieu.get(f, ())]
+            if ung_vien:
+                uu_tien = [f for f in ung_vien if p in goi_y[f]] or ung_vien
+                vi_tri[p] = uu_tien[0]
+                if len(ung_vien) > 1:
+                    canh_bao.append("%s có trong nhiều file (%s), chấm file %s" % (
+                        ten_phan(p), ", ".join(os.path.basename(f) for f in ung_vien), os.path.basename(uu_tien[0])))
+            else:
+                theo_ten = [f for f in nhom[hidden] if p in goi_y[f] and not co_du_lieu.get(f)]
+                if theo_ten:
+                    vi_tri[p] = theo_ten[0]
     khong_xac_dinh = [os.path.relpath(f, thu_muc) for f in cac_file if f not in vi_tri.values()]
     return vi_tri, canh_bao, khong_xac_dinh
 
@@ -333,6 +387,33 @@ def nap_phieu(duong_dan):
         return json.load(f), []
 
 
+def _khong_nop(p):
+    return {"file": None, "diem": 0, "trang_thai": KHONG_DAT, "nhom_loi": "khong_nop", "canh_bao": [],
+            "output_dung": False, "chay_duoc": False,
+            "ly_do": ["Không tìm thấy bài làm %s trong các file đã nộp" % ten_phan(p)]}
+
+
+def _kiem_tra_tep(bai, vi_tri, phan_trong_file, thanh_vien, ma_doi):
+    """Điểm tệp của một bài: đủ 3 tệp <MaDoi>_<A/B/C>_BaiN.py, mỗi phần một tệp, chạy được."""
+    ly_do = []
+    for tv in "ABC":
+        dung_ten = "%s_%s_Bai%d.py" % (ma_doi, tv, bai)
+        f = vi_tri.get((bai, tv))
+        if not f:
+            ly_do.append("Thiếu tệp phần %s (%s)" % (tv, dung_ten))
+            continue
+        ten = os.path.basename(f)
+        if len(phan_trong_file[f]) > 1:
+            ly_do.append("Phần %s nằm chung tệp %s với %s - đề yêu cầu mỗi phần một tệp" % (
+                tv, ten, ", ".join(ten_phan(p) for p in phan_trong_file[f] if p != (bai, tv))))
+        elif ten.lower() != dung_ten.lower():
+            ly_do.append("Tệp phần %s đặt tên %s, đúng quy cách là %s" % (tv, ten, dung_ten))
+        if not thanh_vien[tv].get("chay_duoc"):
+            ly_do.append("Tệp %s %s" % (ten, "không in ra kết quả" if thanh_vien[tv].get("nhom_loi") == "khong_in"
+                                        else "chạy lỗi"))
+    return {"diem": int(not ly_do), "ly_do": _khong_trung(ly_do)}
+
+
 def cham_doi(thu_muc, ma_doi=None, phieu=None, phieu_canh_bao=(), duyet_tay=None):
     """Chạy và kiểm tra code của đội (chậm), rồi tính điểm theo phiếu (nhanh, xem tinh_diem)."""
     vi_tri, canh_bao, khong_xac_dinh = tim_bo_cuc(thu_muc)
@@ -345,45 +426,53 @@ def cham_doi(thu_muc, ma_doi=None, phieu=None, phieu_canh_bao=(), duyet_tay=None
         phan_trong_file.setdefault(f, []).append(p)
 
     bao_cao = {"ma_doi": ma_doi,
-               "bo_cuc": {os.path.relpath(f, thu_muc): ["Bài %d %s" % p for p in ps] for f, ps in phan_trong_file.items()},
+               "bo_cuc": {os.path.relpath(f, thu_muc): [ten_phan(p) for p in ps] for f, ps in phan_trong_file.items()},
                "file_khong_xac_dinh": khong_xac_dinh, "canh_bao": canh_bao,
                "phieu_canh_bao": list(phieu_canh_bao), "bai": {}}
-    for bai in range(1, 6):
+    for bai in CAC_BAI:
         b = {"thanh_vien": {}}
         for tv in "ABC":
             f = vi_tri.get((bai, tv))
-            if f:
-                b["thanh_vien"][tv] = cham_phan(f, bai, tv, phan_trong_file[f])
-            else:
-                b["thanh_vien"][tv] = {"file": None, "diem": 0, "trang_thai": KHONG_DAT, "nhom_loi": "khong_nop",
-                                       "canh_bao": [],
-                                       "ly_do": ["Không tìm thấy bài làm Bài %d phần %s trong các file đã nộp" % (bai, tv)]}
+            b["thanh_vien"][tv] = cham_phan(f, bai, tv, phan_trong_file[f]) if f else _khong_nop((bai, tv))
         gia_tri = [b["thanh_vien"][tv].get("ket_qua") for tv in "ABC"]
         b["k_tu_code"] = tinh_checkpoint(bai, *gia_tri) if None not in gia_tri else None
-        b["nop_du"] = {"diem": int(all((bai, tv) in vi_tri for tv in "ABC"))}
+        b["nop_du"] = _kiem_tra_tep(bai, vi_tri, phan_trong_file, b["thanh_vien"], ma_doi)
         bao_cao["bai"][str(bai)] = b
+    bao_cao["hidden"] = {"thanh_vien": {}}
+    for tv in "ABC":
+        p = (HIDDEN_BAI, tv)
+        f = vi_tri.get(p)
+        bao_cao["hidden"]["thanh_vien"][tv] = cham_phan(f, HIDDEN_BAI, tv, phan_trong_file[f]) if f else _khong_nop(p)
     return tinh_diem(bao_cao, phieu, duyet_tay)
+
+
+def _ap_dung_duyet(p, quyet):
+    """Kết quả tự động của một phần, hoặc kết luận duyệt tay (True/False) nếu có."""
+    tu_dong = p.setdefault("tu_dong", {k: p.get(k) for k in ("diem", "output_dung", "trang_thai", "nhom_loi")})
+    if quyet is None:
+        p.update(tu_dong)
+    else:
+        p.update(diem=int(bool(quyet)), output_dung=bool(quyet),
+                 trang_thai=DUYET_DAT if quyet else DUYET_KHONG_DAT,
+                 nhom_loi=None if quyet else "duyet_khong_dat")
 
 
 def tinh_diem(bao_cao, phieu, duyet_tay=None):
     """Tính (lại) điểm từ kết quả code đã chấm + phiếu + quyết định duyệt tay. Không chạy lại code.
 
-    duyet_tay: {"2B": True/False} - người chấm kết luận đạt/không đạt cho phần đó, thay kết quả tự động.
+    duyet_tay: {"2B": True/False, "3T": ..., "HA": ...} - người chấm kết luận đạt/không đạt cho phần đó
+    (xT: điểm tệp của bài x, HA/HB/HC: code Hidden), thay kết quả tự động.
     """
     duyet_tay = duyet_tay or {}
     tong = 0
-    for bai in range(1, 6):
+    for bai in CAC_BAI:
         b = bao_cao["bai"][str(bai)]
         for tv in "ABC":
-            p = b["thanh_vien"][tv]
-            tu_dong = p.setdefault("tu_dong", {k: p.get(k) for k in ("diem", "output_dung", "trang_thai", "nhom_loi")})
-            quyet = duyet_tay.get("%d%s" % (bai, tv))
-            if quyet is None:
-                p.update(tu_dong)
-            else:
-                p.update(diem=int(bool(quyet)), output_dung=bool(quyet),
-                         trang_thai=DUYET_DAT if quyet else DUYET_KHONG_DAT,
-                         nhom_loi=None if quyet else "duyet_khong_dat")
+            _ap_dung_duyet(b["thanh_vien"][tv], duyet_tay.get("%d%s" % (bai, tv)))
+        tep = b["nop_du"]
+        tep.setdefault("tu_dong", tep.get("diem", 0))
+        tep["duyet"] = duyet_tay.get("%dT" % bai)
+        tep["diem"] = tep["tu_dong"] if tep["duyet"] is None else int(bool(tep["duyet"]))
 
         # Bước 1: điểm theo phiếu trả lời
         pb = (phieu or {}).get("bai", {}).get(str(bai)) or {}
@@ -423,25 +512,54 @@ def tinh_diem(bao_cao, phieu, duyet_tay=None):
                 b["tru"].append({"muc": tv, "nhom": p["nhom_loi"], "ly_do": "%s: %s" % (NHOM_LOI[p["nhom_loi"]], chi_tiet)})
         # Checkpoint chỉ bị kéo theo khi output code sai/không có (vi phạm yêu cầu đề mà output đúng thì không)
         sai = [tv for tv in "ABC" if not b["thanh_vien"][tv].get("output_dung")]
+        b["phieu"]["checkpoint"]["cong_nhan"] = b["phieu"]["checkpoint"]["dung"] and not sai
+        b["phieu"]["checkpoint"]["code_sai"] = sai
         if b["phieu"]["checkpoint"]["dung"] and sai:
             b["tru"].append({"muc": "Checkpoint", "nhom": "checkpoint_sai",
                              "ly_do": "%s (phần %s)" % (NHOM_LOI["checkpoint_sai"], ", ".join(sai))})
 
-        b["diem"] = b["diem_phieu"] - len(b["tru"]) + b["nop_du"]["diem"]
+        b["diem"] = b["diem_phieu"] - len(b["tru"]) + tep["diem"]
         tong += b["diem"]
 
-    if phieu:
-        bao_cao["hidden_challenge"] = {
-            "tu_khoa_dung": str(phieu.get("tu_khoa", "")).strip().upper() == TU_KHOA,
-            "mat_khau_dung": str(phieu.get("mat_khau", "")).strip().upper() == MAT_KHAU,
-            "tung_phan_dung": {tv: _chuan_thong_diep((phieu.get("hidden") or {}).get(tv)) == _chuan_thong_diep(HIDDEN[tv])
-                               for tv in "ABC"},
-            "thong_diep_dung": _chuan_thong_diep(phieu.get("thong_diep")) == THONG_DIEP,
-            "ghi_chu": "Không cộng điểm; dùng để phân hạng cùng timestamp nộp trên LMS",
-        }
+    bao_cao["hidden_challenge"] = _hidden_challenge(bao_cao, phieu or {}, duyet_tay)
     bao_cao["tong_diem"] = tong
     bao_cao["toi_da"] = 25
     return bao_cao
+
+
+def _hidden_challenge(bao_cao, phieu, duyet_tay):
+    """Hoàn thành Hidden = 3 mảnh trong phiếu đúng + thông điệp đúng + code từng mảnh được xác thực. Không cộng điểm."""
+    code = (bao_cao.get("hidden") or {}).get("thanh_vien", {})
+    for tv, p in code.items():
+        _ap_dung_duyet(p, duyet_tay.get("H" + tv))
+    ghi = phieu.get("hidden") or {}
+    h = {"tung_phan": {}, "ly_do": [],
+         "tu_khoa_dung": _chuan_manh(phieu.get("tu_khoa")) == TU_KHOA,
+         "mat_khau_dung": _chuan_manh(phieu.get("mat_khau")) == MAT_KHAU,
+         "thong_diep": phieu.get("thong_diep") or "",
+         "thong_diep_dung": _chuan_manh(phieu.get("thong_diep")) == _chuan_manh(THONG_DIEP),
+         "ghi_chu": "Không cộng điểm; khi bằng điểm, đội hoàn thành Hidden xếp trên, rồi tới đội nộp sớm hơn"}
+    for tv in "ABC":
+        p = code.get(tv) or {}
+        muc = {"ghi": ghi.get(tv) or "", "dung": _chuan_manh(ghi.get(tv)) == HIDDEN[tv], "code_dat": bool(p.get("diem"))}
+        h["tung_phan"][tv] = muc
+        if not muc["dung"]:
+            h["ly_do"].append("Phiếu ghi mảnh %s là '%s', đáp án '%s'" % (tv, muc["ghi"] or "(trống)", HIDDEN[tv]))
+        if not muc["code_dat"]:
+            h["ly_do"].append("Code Hidden %s chưa được xác thực: %s" % (
+                tv, "; ".join(p.get("ly_do") or [c for c in p.get("canh_bao", []) if "tạm 0" in c])
+                or "không có code"))
+    # Như Checkpoint của 5 bài: output code của mảnh nào sai/không có thì thông điệp ghép cũng không được công nhận
+    h["thong_diep_phieu_dung"] = h["thong_diep_dung"]
+    h["code_sai"] = [tv for tv in "ABC" if not (code.get(tv) or {}).get("output_dung")]
+    h["thong_diep_dung"] = h["thong_diep_phieu_dung"] and not h["code_sai"]
+    if not h["thong_diep_phieu_dung"]:
+        h["ly_do"].append("Thông điệp cuối '%s' chưa đúng" % (h["thong_diep"] or "(trống)"))
+    elif h["code_sai"]:
+        h["ly_do"].append("Thông điệp cuối không được công nhận vì output code Hidden %s chưa đúng"
+                          % ", ".join(h["code_sai"]))
+    h["hoan_thanh"] = not h["ly_do"]
+    return h
 
 
 def in_tom_tat(bc):
@@ -455,16 +573,18 @@ def in_tom_tat(bc):
     if bc["file_khong_xac_dinh"]:
         print("  File không xác định được là bài nào:", ", ".join(bc["file_khong_xac_dinh"]))
     print()
-    print("%-5s %-26s %-10s %-7s %s" % ("Bài", "Theo phiếu (A B C K)", "Trừ (code)", "Nộp đủ", "Điểm"))
-    bi_tru, phieu_sai, can_xem = [], [], []
+    print("%-5s %-26s %-10s %-5s %s" % ("Bài", "Theo phiếu (A B C K)", "Trừ (code)", "Tệp", "Điểm"))
+    bi_tru, phieu_sai, can_xem, tep_sai = [], [], [], []
     for bai, b in bc["bai"].items():
         dau = " ".join("✓" if b["phieu"][m]["dung"] else "✗" for m in ("A", "B", "C", "checkpoint"))
-        print("%-5s %-26s %-10s %-7s %d" % (bai, "%d/4  (%s)" % (b["diem_phieu"], dau),
+        print("%-5s %-26s %-10s %-5s %d" % (bai, "%d/4  (%s)" % (b["diem_phieu"], dau),
                                             "-%d" % len(b["tru"]) if b["tru"] else "0", b["nop_du"]["diem"], b["diem"]))
         for t in b["tru"]:
             tv = t["muc"] if t["muc"] in "ABC" else None
             bi_tru.append(("Bài %s %s" % (bai, t["muc"]), b["thanh_vien"][tv].get("file") if tv else None, t["ly_do"]))
         phieu_sai += ["Bài %s %s: %s" % (bai, s["muc"], s["ly_do"]) for s in b["phieu_sai"]]
+        if not b["nop_du"]["diem"]:
+            tep_sai += ["Bài %s: %s" % (bai, x) for x in b["nop_du"]["ly_do"]]
         for tv in "ABC":
             p = b["thanh_vien"][tv]
             if p["diem"] and p["canh_bao"]:
@@ -479,11 +599,15 @@ def in_tom_tat(bc):
         print("\nBị trừ điểm do code không xác thực được:")
         for ten, f, ly_do in bi_tru:
             print("  - %s%s: %s" % (ten, " [%s]" % f if f else "", ly_do))
-    if "hidden_challenge" in bc:
-        h = bc["hidden_challenge"]
-        print("\nHidden Challenge: từ khóa %s, mật khẩu %s, thông điệp %s" % (
-            "đúng" if h["tu_khoa_dung"] else "SAI", "đúng" if h["mat_khau_dung"] else "SAI",
-            "đúng" if h["thong_diep_dung"] else "SAI"))
+    if tep_sai:
+        print("\nMất điểm tệp (đủ 3 tệp đặt tên đúng, chạy được):")
+        for s in tep_sai:
+            print("  - " + s)
+    h = bc.get("hidden_challenge")
+    if h:
+        print("\nHidden Challenge (không cộng điểm): %s" % ("HOÀN THÀNH" if h["hoan_thanh"] else "chưa hoàn thành"))
+        for x in h["ly_do"]:
+            print("  - " + x)
     if can_xem:
         print("\nĐược điểm nhưng có cảnh báo, nên xem lại:")
         for ten, f, ds in can_xem:

@@ -1,4 +1,6 @@
-data = [9, 1, 7, 1]
+# Bai 2 - Thanh vien C: tong vi tri chan - tong vi tri le
+data = [10, 1, 6, 1]
+
 tong_chan = 0
 tong_le = 0
 for i in range(len(data)):

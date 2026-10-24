@@ -20,23 +20,26 @@ Cho máy khác trong mạng LAN truy cập: `$env:HOST = "0.0.0.0"` trước khi
 
 1. **Admin** đăng nhập → đặt hạn nộp, mở nộp bài. Có thể thêm trước danh sách đội (`MÃ_ĐỘI,Tên đội`)
    để có sẵn tên; không bắt buộc.
-2. **Đội** vào trang chủ → nhập **mã đội, tên đội** → form có 6 ô: **Phiếu trả lời** (`.docx`, bắt buộc) và
-   **Bài 1 → Bài 5** (mỗi ô một file `.py`/`.ipynb`) → Nộp. File được lưu với tên chuẩn theo ô.
+2. **Đội** vào trang chủ → nhập **mã đội, tên đội** → form có 7 ô: **Phiếu trả lời** (`.docx`, bắt buộc),
+   **Bài 1 → Bài 5** (mỗi ô 3 tệp `.py` của A, B, C) và **Hidden Challenge** (3 tệp `.py`, không bắt buộc) → Nộp.
+   Tệp được lưu **giữ nguyên tên đội đặt** (đề chấm điểm cả quy cách tên `<MaDoi>_<A/B/C>_BaiN.py`); quá 3 tệp
+   một ô, sai loại tệp hoặc trùng tên tệp thì nộp lỗi.
    Trang của đội **chỉ có quyền nộp**. Lúc nộp chỉ kiểm tra **thông tin đội**:
    - Mã đội, tên đội nhập vào phải **khớp** với ô Mã đội, Tên đội trong phiếu (không phân biệt hoa/thường,
      khoảng trắng thừa); phiếu phải đọc được. **Đúng và đủ → "Nộp thành công"**.
    - Sai/thiếu → **"Nộp lỗi"** kèm lý do, đội nộp lại. Lần nộp lỗi vẫn được lưu để admin thấy, nhưng **không chấm**.
-   Lỗi trong bài làm (cú pháp, nộp nhầm ô, thiếu bài...) **không báo cho đội** - chỉ admin thấy ở mục "Kiểm tra định
-   dạng lúc nộp", và bị trừ điểm khi chấm. Đội không xem được điểm hay trang nào khác; mọi trang `/admin` yêu cầu
+   Lỗi trong bài làm (cú pháp, đặt sai tên tệp, thiếu bài...) **không báo cho đội** - chỉ admin thấy ở mục "Kiểm tra
+   định dạng", và bị trừ điểm khi chấm. Đội không xem được điểm hay trang nào khác; mọi trang `/admin` yêu cầu
    đăng nhập, `/docs`, `/openapi.json` đã tắt.
 3. **Không chấm tự động khi nộp.** Mỗi đội **chỉ chấm lần nộp thành công cuối cùng**. Ở trang tổng quan, mỗi đội có
    **nút "Chấm" riêng ở cuối dòng**; hoặc bấm **"Chấm các bài chưa chấm"** để chấm hết một lượt. Đội nộp lại sau khi
    đã chấm thì về "Chưa chấm", chờ admin chấm lại.
 4. **Bấm vào một đội** → trang chi tiết: **số lần nộp** và **bảng lịch sử** (mỗi lần: thời gian, nộp thành công/nộp lỗi
    kèm lý do, bản nào được chấm, điểm). Bấm một dòng để xem lần nộp đó: file, mã nguồn, phiếu, kiểm tra định dạng;
-   với bản được chấm còn có điểm theo bài, lý do mất/trừ điểm, test ẩn, output, và nút **Duyệt đạt / Không đạt**
-   cho phần "Chờ duyệt" (điểm tính lại ngay, không chạy lại code).
-5. **Xếp hạng**: tổng điểm → giải đúng Hidden Challenge → thời điểm nộp phiếu có thông điệp đúng sớm nhất.
+   với bản được chấm còn có điểm theo bài (A, B, C, Checkpoint, điểm tệp), lý do mất/trừ điểm, Hidden Challenge,
+   test ẩn, output, và nút **Duyệt đạt / Không đạt** cho từng phần, điểm tệp từng bài và code Hidden
+   (điểm tính lại ngay, không chạy lại code).
+5. **Xếp hạng**: tổng điểm → hoàn thành Hidden Challenge → thời điểm nộp bản được chấm sớm hơn.
    Tải CSV để công bố.
 
 ## Deploy (miễn phí): nộp bài trên Google Apps Script, chấm trên Vercel

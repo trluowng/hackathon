@@ -1,30 +1,29 @@
-# ===== BAI 1 - DAU MOC 70 NAM =====
+# Bai 1 - Thanh vien A: tong cac chu so cua n (khong chuyen n thanh chuoi)
+n = 4728
 
-# --- Thanh vien A ---
-year = 1956
-n = year
 A = 0
-while n > 0:
-    A += n % 10
-    n //= 10
+so = n
+while so > 0:
+    A += so % 10
+    so //= 10
 print("A =", A)
 
-# --- Thanh vien B ---
-year = 2026
-n = year
+
+# Bai 1 - Thanh vien B: dem so chan trong doan [1, n]
+n = 28
+
 B = 0
-while n > 0:
-    B += n % 10
-    n //= 10
+for x in range(1, n + 1):
+    if x % 2 == 0:
+        B += 1
 print("B =", B)
 
-# --- Thanh vien C ---
-text = "UNETI2026"
+
+# Bai 1 - Thanh vien C: dem chu cai tieng Anh trong chuoi
+text = "UNETI70AI"
+
 C = 0
 for ch in text:
-    if ch.isalpha():
+    if ("A" <= ch <= "Z") or ("a" <= ch <= "z"):
         C += 1
 print("C =", C)
-
-K1 = A + B - 2 * C
-print("K1 =", K1, "->", chr(64 + K1))

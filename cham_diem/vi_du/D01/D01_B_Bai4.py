@@ -1,31 +1,34 @@
-import heapq
-
+# Bai 4 - Thanh vien B: liet ke cac duong di don tu S den T, lay tong nho nhat
 du_lieu = """
-S A 7
-S B 5
-A D 8
+S A 8
+S B 4
+A D 7
 B D 6
-D T 9
-A T 16
-B T 18
+D T 10
+A T 20
+B T 19
 """
 
-graph = {}
-for line in du_lieu.strip().splitlines():
-    u, v, w = line.split()
-    graph.setdefault(u, []).append((v, int(w)))
-    graph.setdefault(v, []).append((u, int(w)))
+ke = {}
+for dong in du_lieu.strip().splitlines():
+    u, v, w = dong.split()
+    ke.setdefault(u, []).append((v, int(w)))
+    ke.setdefault(v, []).append((u, int(w)))
 
-dist = {u: float("inf") for u in graph}
-dist["S"] = 0
-heap = [(0, "S")]
-while heap:
-    d, u = heapq.heappop(heap)
-    if d > dist[u]:
-        continue
-    for v, w in graph[u]:
-        if d + w < dist[v]:
-            dist[v] = d + w
-            heapq.heappush(heap, (dist[v], v))
-B = dist["T"]
+tot_nhat = None
+
+
+def di(u, da_qua, tong):
+    global tot_nhat
+    if u == "T":
+        if tot_nhat is None or tong < tot_nhat:
+            tot_nhat = tong
+        return
+    for v, w in ke[u]:
+        if v not in da_qua:
+            di(v, da_qua | {v}, tong + w)
+
+
+di("S", {"S"}, 0)
+B = tot_nhat
 print("B =", B)

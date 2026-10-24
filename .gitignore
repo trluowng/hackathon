@@ -7,3 +7,5 @@ __pycache__/
 # Biến môi trường bí mật khi chạy thử trên máy
 .env
 .vercel
+
+index.html

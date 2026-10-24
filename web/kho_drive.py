@@ -219,11 +219,6 @@ def lan_nop_moi_nhat(ma_doi, ca_nop_loi=False):
     return None
 
 
-def hidden_dung_som_nhat(ma_doi):
-    ds = [n["thoi_gian"] for _, n in _cua_doi(ma_doi) if n.get("hidden") == "1" and n.get("loi") != "1"]
-    return min(ds) if ds else None
-
-
 def thu_muc_lam_viec(lan_nop):
     """Tải file của lần nộp từ Drive về thư mục tạm để chấm."""
     dich = os.path.join(THU_MUC_TAM, "cham", lan_nop["id"])
@@ -249,7 +244,8 @@ def doc_file(lan_nop, ten):
 
 def _nhan_tom_tat(tom_tat):
     return {"tong": str(tom_tat["tong"]), "diem_bai": ",".join(map(str, tom_tat["diem_bai"])),
-            "cho_duyet": str(tom_tat["cho_duyet"]), "nen_xem": str(tom_tat["nen_xem"])}
+            "cho_duyet": str(tom_tat["cho_duyet"]), "nen_xem": str(tom_tat["nen_xem"]),
+            "hidden_ht": "1" if tom_tat["hidden"] else "0"}
 
 
 def dat_ket_qua(lan_nop_id, trang_thai, bao_cao=None, phieu=None, loi=None):
@@ -286,10 +282,12 @@ def ds_chua_xong():
 def lay_tom_tat(lan_nop_id):
     """Đọc ngay từ nhãn thư mục (không tải báo cáo) - đủ nhanh cho trang tổng quan nhiều đội."""
     nhan = _tim(lan_nop_id) or {}
-    tom_tat = {"trang_thai": nhan.get("tt") or "chua_cham", "tong": None, "diem_bai": [], "cho_duyet": 0, "nen_xem": 0}
+    tom_tat = {"trang_thai": nhan.get("tt") or "chua_cham", "tong": None, "diem_bai": [], "cho_duyet": 0, "nen_xem": 0,
+               "hidden": False}
     if tom_tat["trang_thai"] == "da_cham" and nhan.get("tong") not in (None, "", "None"):
         tom_tat.update(tong=int(nhan["tong"]), diem_bai=[int(x) for x in nhan.get("diem_bai", "").split(",") if x],
-                       cho_duyet=int(nhan.get("cho_duyet", 0)), nen_xem=int(nhan.get("nen_xem", 0)))
+                       cho_duyet=int(nhan.get("cho_duyet", 0)), nen_xem=int(nhan.get("nen_xem", 0)),
+                       hidden=nhan.get("hidden_ht") == "1")
     return tom_tat
 
 

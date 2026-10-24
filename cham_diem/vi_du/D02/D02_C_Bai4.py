@@ -1,31 +1,34 @@
+# Bai 4 - Thanh vien C: duong di ngan nhat S -> T (Dijkstra)
 import heapq
 
-du_lieu = """
-S X 3
-S Y 8
-X Z 7
-Y Z 4
-Z T 10
-X T 18
-Y T 15
-"""
 
-graph = {}
-for line in du_lieu.strip().splitlines():
-    u, v, w = line.split()
-    graph.setdefault(u, []).append((v, int(w)))
-    graph.setdefault(v, []).append((u, int(w)))
+def duong_ngan_nhat(canh, S="S", T="T"):
+    ke = {}
+    for u, v, w in canh:
+        ke.setdefault(u, []).append((v, w))
+        ke.setdefault(v, []).append((u, w))
+    kc = {S: 0}
+    hang = [(0, S)]
+    while hang:
+        d, u = heapq.heappop(hang)
+        if d > kc[u]:
+            continue
+        if u == T:
+            return d
+        for v, w in ke[u]:
+            if d + w < kc.get(v, float("inf")):
+                kc[v] = d + w
+                heapq.heappush(hang, (kc[v], v))
+    return None
 
-dist = {u: float("inf") for u in graph}
-dist["S"] = 0
-heap = [(0, "S")]
-while heap:
-    d, u = heapq.heappop(heap)
-    if d > dist[u]:
-        continue
-    for v, w in graph[u]:
-        if d + w < dist[v]:
-            dist[v] = d + w
-            heapq.heappush(heap, (dist[v], v))
-C = dist["T"]
+
+do_thi = {
+    "S": {"X": 5, "Y": 7},
+    "X": {"S": 5, "Z": 6, "T": 18},
+    "Y": {"S": 7, "Z": 6, "T": 16},
+    "Z": {"X": 6, "Y": 6, "T": 9},
+    "T": {"Z": 9, "X": 18, "Y": 16},
+}
+edges = [(u, v, w) for u in do_thi for v, w in do_thi[u].items()]
+C = duong_ngan_nhat(edges)
 print("C =", C)

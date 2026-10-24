@@ -50,7 +50,7 @@ Cần chuẩn bị: 1 tài khoản **Gmail** (chứa bài nộp), 1 tài khoản
 ### Nộp lại và file thống kê
 
 - Mỗi đội có **một thư mục** `bai_nop/<MÃ_ĐỘI>`. Đội nộp lại thành công thì **bài mới đè bài cũ**: file cũ bị chuyển
-  vào Thùng rác, thư mục chỉ còn 6 file của lần nộp mới nhất. Admin chỉ chấm được bản mới nhất này.
+  vào Thùng rác, thư mục chỉ còn các tệp của lần nộp mới nhất (tối đa 19 tệp). Admin chỉ chấm được bản mới nhất này.
 - Lần nộp **lỗi** không đè bài đang có (bài thành công trước đó vẫn được giữ để chấm).
 - File **Thong_ke_nop_bai_Vong1** (Google Sheet, mở hoặc *Tải xuống → Excel .xlsx*): mỗi đội một dòng – lần nộp gần
   nhất, kết quả (thành công / lỗi + lý do), số lần nộp, bản được chấm, file đã nộp, link thư mục, trạng thái chấm,
@@ -100,12 +100,13 @@ Cần chuẩn bị: 1 tài khoản **Gmail** (chứa bài nộp), 1 tài khoản
 
 1. Mở `https://...vercel.app/admin` → tài khoản `admin`, mật khẩu `ADMIN_MAT_KHAU` → thấy trang **Các đội thi**
    và dòng *Link gửi các đội để nộp bài* trỏ tới link Apps Script. (Mở `https://...vercel.app/` cũng tự chuyển sang trang nộp.)
-2. Mở trang nộp bài (link Apps Script), nộp thử bộ mẫu `bai_giai_mau\2_python_gop\`:
-   Mã đội `MAU`, Tên đội `Đội mẫu`, ô Phiếu: `MAU_PhieuTraLoi_Vong1.docx`, ô Bài 1–5: `MAU_Bai1.py`…`MAU_Bai5.py`
+2. Mở trang nộp bài (link Apps Script), nộp thử bộ mẫu `bai_giai_mau\MAU\`:
+   Mã đội `MAU`, Tên đội `Đội mẫu`, ô Phiếu: `MAU_PhieuTraLoi.docx`; ô Bài 1: chọn cùng lúc 3 tệp `MAU_A_Bai1.py`,
+   `MAU_B_Bai1.py`, `MAU_C_Bai1.py` (giữ Ctrl để chọn nhiều), tương tự Bài 2–5; ô Hidden: 3 tệp `MAU_Hidden_*.py`
    → **Nộp bài** → phải hiện **"Nộp thành công"**.
-3. Google Drive → `OlympicAI_Vong1/bai_nop/` → có thư mục `MAU` chứa 6 file; file `Thong_ke_nop_bai_Vong1` có dòng MAU.
-   Nộp lại bộ mẫu lần nữa → thư mục `MAU` vẫn chỉ 6 file, file thống kê ghi *Số lần nộp* = 2.
-4. Trang admin (tải lại) → dòng **MAU** → **Chấm** → đợi trang tải lại → **25/25** (file thống kê cũng hiện 25).
+3. Google Drive → `OlympicAI_Vong1/bai_nop/` → có thư mục `MAU` chứa 19 tệp (giữ nguyên tên); file `Thong_ke_nop_bai_Vong1` có dòng MAU.
+   Nộp lại bộ mẫu lần nữa → thư mục `MAU` vẫn chỉ 19 tệp, file thống kê ghi *Số lần nộp* = 2.
+4. Trang admin (tải lại) → dòng **MAU** → **Chấm** → đợi trang tải lại → **25/25**, Hidden *Hoàn thành* (file thống kê cũng hiện 25).
 5. Nộp thử sai tên đội (`Đội khác`) → phải báo **NỘP LỖI**; trang admin hiện lần đó là *Nộp lỗi*.
 
 ## Phần E. Ngày thi

@@ -1,13 +1,18 @@
-activities = [
-    "AI", "data", "AI", "ROBOT", "ai",
-    "DATA", "Ai", "STEM", "AI"
+# Bai 3 - Thanh vien A: hoat dong pho bien nhat (tu dem bang dict)
+events = [
+    "AI", "STEM", "ai", "DATA",
+    "Ai", "ROBOT", "AI", "ai"
 ]
-tan_suat = {}
-for act in activities:
-    key = act.upper()
-    tan_suat[key] = tan_suat.get(key, 0) + 1
-A = 0
-for key in tan_suat:
-    if tan_suat[key] > A:
-        A = tan_suat[key]
+
+dem = {}
+for e in events:
+    ten = e.strip().upper()
+    dem[ten] = dem.get(ten, 0) + 1
+
+ten_nhieu = None
+for ten in dem:
+    if ten_nhieu is None or dem[ten] > dem[ten_nhieu]:
+        ten_nhieu = ten
+A = dem[ten_nhieu]
+print(ten_nhieu, A)
 print("A =", A)

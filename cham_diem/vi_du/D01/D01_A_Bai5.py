@@ -1,15 +1,17 @@
-import math
-X = [(1, 1), (2, 2), (2, 3), (8, 8), (9, 9)]
-y = [9, 9, 9, 3, 3]
-px, py = 3, 3
-k = 3
-kc = []
-for i in range(len(X)):
-    d = math.sqrt((X[i][0] - px) ** 2 + (X[i][1] - py) ** 2)
-    kc.append((d, y[i]))
-kc.sort()
-phieu = {}
-for d, nhan in kc[:k]:
-    phieu[nhan] = phieu.get(nhan, 0) + 1
-A = max(phieu, key=phieu.get)
+# Bai 5 - Thanh vien A: KNN k = 1, Manhattan
+def du_doan(train, P):
+    """KNN k = 1, khoang cach Manhattan."""
+    nhan_gan_nhat = None
+    kc_nho_nhat = None
+    for x, y, nhan in train:
+        d = abs(x - P[0]) + abs(y - P[1])
+        if kc_nho_nhat is None or d < kc_nho_nhat:
+            kc_nho_nhat = d
+            nhan_gan_nhat = nhan
+    return nhan_gan_nhat
+
+
+train = [(4, 5, 9), (2, 2, 3), (7, 6, 2), (1, 8, 4)]
+P = (4, 4)
+A = du_doan(train, P)
 print("A =", A)

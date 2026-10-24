@@ -39,7 +39,7 @@ def cham_ngay(lan_nop_id):
         kho.dat_ket_qua(lan_nop_id, "dang_cham")
         thu_muc = kho.thu_muc_lam_viec(lan_nop)
         if not lan_nop.get("kiem_tra"):  # nộp qua Apps Script: kiểm tra định dạng lúc chấm để admin xem
-            kho.luu_kiem_tra(lan_nop_id, kiem_tra(thu_muc)[0])
+            kho.luu_kiem_tra(lan_nop_id, kiem_tra(thu_muc, lan_nop["ma_doi"])[0])
         duong_dan_phieu = tim_phieu(thu_muc)
         phieu, phieu_canh_bao = None, []
         if duong_dan_phieu:

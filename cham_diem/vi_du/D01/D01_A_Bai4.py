@@ -1,25 +1,28 @@
-# Dijkstra tren danh sach ke dang dict
+# Bai 4 - Thanh vien A: duong di ngan nhat S -> T (Dijkstra)
 import heapq
 
-graph = {
-    "S": {"A": 4, "B": 9},
-    "A": {"S": 4, "C": 6, "T": 18},
-    "B": {"S": 9, "C": 3, "T": 15},
-    "C": {"A": 6, "B": 3, "T": 10},
-    "T": {"C": 10, "A": 18, "B": 15},
-}
 
-dist = {u: float("inf") for u in graph}
-dist["S"] = 0
-pq = [(0, "S")]
-while pq:
-    d, u = heapq.heappop(pq)
-    if d > dist[u]:
-        continue
-    for v, w in graph[u].items():
-        if d + w < dist[v]:
-            dist[v] = d + w
-            heapq.heappush(pq, (dist[v], v))
+def duong_ngan_nhat(canh, S="S", T="T"):
+    ke = {}
+    for u, v, w in canh:
+        ke.setdefault(u, []).append((v, w))
+        ke.setdefault(v, []).append((u, w))
+    kc = {S: 0}
+    hang = [(0, S)]
+    while hang:
+        d, u = heapq.heappop(hang)
+        if d > kc[u]:
+            continue
+        if u == T:
+            return d
+        for v, w in ke[u]:
+            if d + w < kc.get(v, float("inf")):
+                kc[v] = d + w
+                heapq.heappush(hang, (kc[v], v))
+    return None
 
-A = dist["T"]
+
+edges = [("S", "A", 6), ("S", "B", 9), ("A", "C", 5), ("B", "C", 4),
+         ("C", "T", 9), ("A", "T", 19), ("B", "T", 18)]
+A = duong_ngan_nhat(edges)
 print("A =", A)

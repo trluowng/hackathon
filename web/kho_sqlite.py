@@ -154,14 +154,6 @@ def lan_nop_moi_nhat(ma_doi, ca_nop_loi=False):
             "SELECT * FROM lan_nop WHERE ma_doi = ?%s ORDER BY id DESC LIMIT 1" % dieu_kien, (ma_doi,)).fetchone())
 
 
-def hidden_dung_som_nhat(ma_doi):
-    """Thời điểm sớm nhất đội nộp phiếu có thông điệp Hidden Challenge đúng (để phân hạng)."""
-    with ket_noi() as c:
-        r = c.execute("""SELECT MIN(thoi_gian) AS t FROM lan_nop
-                         WHERE ma_doi = ? AND hidden_dung = 1 AND loi_nop IS NULL""", (ma_doi,)).fetchone()
-    return r["t"] if r else None
-
-
 def thu_muc_lam_viec(lan_nop):
     """Thư mục trên máy chứa file của lần nộp, để chấm."""
     return lan_nop["thu_muc"]

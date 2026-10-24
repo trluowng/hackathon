@@ -1,10 +1,16 @@
+# Bai 3 - Thanh vien C: cau lac bo co nhieu ban ghi nhat
 records = [
-    ("DSC", 2024), ("STEM", 2024), ("DSC", 2025),
-    ("AC", 2025), ("DSC", 2026), ("BOOK", 2026),
-    ("DSC", 2026), ("STEM", 2026), ("DSC", 2026)
+    ("DSC", 2024), ("STEM", 2024),
+    ("DSC", 2025), ("ROBOT", 2025),
+    ("DSC", 2026), ("AI", 2026),
+    ("DSC", 2026), ("DSC", 2027)
 ]
-tan_suat = {}
+
+dem = {}
 for clb, nam in records:
-    tan_suat[clb] = tan_suat.get(clb, 0) + 1
-C = max(tan_suat.values())
+    dem[clb] = dem.get(clb, 0) + 1
+
+clb_nhieu = max(dem, key=dem.get)
+C = dem[clb_nhieu]
+print(clb_nhieu, C)
 print("C =", C)

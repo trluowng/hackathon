@@ -44,7 +44,8 @@
             {% if h.lan_nop %}<br><small class="phu">chấm lần {{ h.lan_nop.so }}: {{ trang_thai_cham(h.trang_thai) }}</small>{% endif %}
           {% else %}{{ trang_thai_cham(h.trang_thai) }}{% endif %}
         </td>
-        <td class="so"><strong>{{ h.tong if h.tong is not none else "—" }}</strong>{% if h.tong is not none %}/25{% endif %}</td>
+        <td class="so"><strong>{{ h.tong if h.tong is not none else "—" }}</strong>{% if h.tong is not none %}/25{% endif %}
+          {% if h.hidden %}<br><span class="nhan nhan-xanh" title="Hoàn thành Hidden Challenge">Hidden ✓</span>{% endif %}</td>
         <td class="so">{% if h.cho_duyet %}<span class="nhan nhan-vang">{{ h.cho_duyet }}</span>{% else %}0{% endif %}</td>
         <td class="so">{{ h.nen_xem }}</td>
         <td class="o-nut">
