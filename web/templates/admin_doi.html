@@ -238,6 +238,9 @@
       </tbody>
     </table>
     {% if h.ly_do %}<ul class="ds-tru">{% for x in h.ly_do %}<li>{{ x }}</li>{% endfor %}</ul>{% endif %}
+    <div class="phan" id="phan-HT"><strong>Duyệt thông điệp cuối</strong>
+      <span class="phu">(khi đội ghi thêm chữ ngoài thông điệp đúng, viết khác cách trình bày...)</span>
+      {{ form_duyet("HT", duyet.get("HT")) }}</div>
     {% endif %}
     <p class="phu">Từ khóa <span class="{{ 'ok' if h.tu_khoa_dung else 'sai-chu' }}">{{ "đúng" if h.tu_khoa_dung else "sai" }}</span> ·
       Mật khẩu <span class="{{ 'ok' if h.mat_khau_dung else 'sai-chu' }}">{{ "đúng" if h.mat_khau_dung else "sai" }}</span></p>

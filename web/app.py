@@ -465,10 +465,10 @@ def admin_duyet(request: Request, lan_nop_id: str, phan: str = Form(...), quyet:
     if not la_admin(request):
         return ve("/admin/dang-nhap")
     lan_nop = kho.lay_lan_nop(lan_nop_id)
-    if not lan_nop or not re.fullmatch(r"[1-5][ABCT]|H[ABC]", phan) or quyet not in ("dat", "khong_dat", "bo"):
+    if not lan_nop or not re.fullmatch(r"[1-5][ABCT]|H[ABCT]", phan) or quyet not in ("dat", "khong_dat", "bo"):
         return ve("/admin")
     kho.duyet(lan_nop_id, phan, {"dat": True, "khong_dat": False, "bo": None}[quyet], ghi_chu.strip())
-    ten = "Hidden %s" % phan[1] if phan[0] == "H" else (
+    ten = "Hidden - thông điệp cuối" if phan == "HT" else "Hidden %s" % phan[1] if phan[0] == "H" else (
         "Bài %s - điểm tệp" % phan[0] if phan[1] == "T" else "Bài %s phần %s" % (phan[0], phan[1]))
     thong_bao(request, "%s: %s." % (ten, {"dat": "đã duyệt ĐẠT", "khong_dat": "đã duyệt KHÔNG ĐẠT",
                                           "bo": "đã bỏ duyệt, dùng kết quả tự động"}[quyet]))

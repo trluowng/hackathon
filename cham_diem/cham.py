@@ -552,6 +552,10 @@ def _hidden_challenge(bao_cao, phieu, duyet_tay):
     # Như Checkpoint của 5 bài: output code của mảnh nào sai/không có thì thông điệp ghép cũng không được công nhận
     h["thong_diep_phieu_dung"] = h["thong_diep_dung"]
     h["code_sai"] = [tv for tv in "ABC" if not (code.get(tv) or {}).get("output_dung")]
+    # Duyệt tay "HT": BTC kết luận thông điệp đội ghi có đúng không (vd ghi thêm chữ ngoài thông điệp đúng)
+    h["duyet_thong_diep"] = duyet_tay.get("HT")
+    if h["duyet_thong_diep"] is not None:
+        h["thong_diep_phieu_dung"] = bool(h["duyet_thong_diep"])
     h["thong_diep_dung"] = h["thong_diep_phieu_dung"] and not h["code_sai"]
     if not h["thong_diep_phieu_dung"]:
         h["ly_do"].append("Thông điệp cuối '%s' chưa đúng" % (h["thong_diep"] or "(trống)"))
